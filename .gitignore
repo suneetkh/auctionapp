@@ -1,0 +1,6 @@
+bin/
+obj/
+*.user
+App_Data/*.db
+App_Data/*.db-*
+.vs/

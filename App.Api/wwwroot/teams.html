@@ -1,0 +1,241 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Teams</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=team-branding-1" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>Teams — <span id="auctionName"></span></h4>
+    <a href="admin-dashboard.html" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
+  </div>
+
+  <div class="card p-3 mb-4 shadow-sm">
+    <h6>Add Team</h6>
+    <form id="addForm" class="row g-2">
+      <div class="col-md-3"><input class="form-control" id="Name" placeholder="Team name" required></div>
+      <div class="col-md-3"><input class="form-control" id="OpeningBalance" placeholder="Opening balance (blank = default)" type="number"></div>
+      <div class="col-md-3"><div class="input-group"><input type="color" class="form-control form-control-color" id="TeamColorPicker" value="#0ea5e9" title="Choose team color"><input class="form-control" id="TeamColor" placeholder="Automatic, blue, or #0ea5e9"></div></div>
+      <div class="col-md-3"><input class="form-control" id="ContactInfo" placeholder="Contact info"></div>
+      <div class="col-md-6"><label class="form-label small mb-1">Team logo (PNG, JPG, WebP; up to 500 KB)</label><input class="form-control" id="TeamLogoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif"></div>
+      <div class="col-md-3 d-flex align-items-end"><div id="addLogoPreview" class="team-logo-preview text-muted small">No logo</div></div>
+      <div class="col-md-3 d-flex align-items-end"><button class="btn btn-primary w-100" type="submit">Add Team</button></div>
+    </form>
+  </div>
+
+  <div class="alert alert-warning d-none" id="balanceLockedNotice">
+    Opening balances are locked once the auction is Live or beyond. Use the correction workflow (adjust_balance) on the live console for further changes.
+  </div>
+
+  <table class="table table-hover bg-white shadow-sm">
+    <thead><tr><th>Team</th><th>Color</th><th>Opening Balance</th><th>Available Balance</th><th>Roster</th><th>Active</th><th>Actions</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="7" class="text-center text-muted">Loading...</td></tr></tbody>
+  </table>
+</div>
+
+<div class="modal fade" id="editTeamModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="editTeamForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Team</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="editTeamId">
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label small">Name</label><input class="form-control" id="editTeamName" required></div>
+            <div class="col-md-6"><label class="form-label small">Team color (name or hex code)</label><div class="input-group"><input type="color" class="form-control form-control-color" id="editTeamColorPicker"><input class="form-control" id="editTeamColor" placeholder="blue or #0ea5e9"></div></div>
+            <div class="col-12"><label class="form-label small">Upload team logo (up to 500 KB)</label><input class="form-control" id="editTeamLogoFile" type="file" accept="image/png,image/jpeg,image/webp,image/gif"><div class="d-flex align-items-center gap-2 mt-2"><div id="editLogoPreview" class="team-logo-preview text-muted small">No logo</div><button type="button" class="btn btn-sm btn-outline-danger" id="removeTeamLogo">Remove logo</button></div></div>
+            <div class="col-md-6"><label class="form-label small">Contact Info</label><input class="form-control" id="editTeamContactInfo"></div>
+            <div class="col-md-6 form-check form-switch mt-4">
+              <input class="form-check-input" type="checkbox" id="editTeamActive">
+              <label class="form-check-label">Active</label>
+            </div>
+            <div class="col-12"><label class="form-label small">Notes</label><textarea class="form-control" id="editTeamNotes"></textarea></div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/nav.js?v=users-access-1"></script>
+<script src="js/ui.js?v=notices-2"></script>
+<script>
+if (!requireAuth(['SuperAdmin', 'AuctionAdmin'])) { throw new Error('unauth'); }
+renderNavbar('teams.html');
+const auctionId = new URLSearchParams(location.search).get('auctionId') || new URLSearchParams(location.search).get('id');
+if (!auctionId) { alert('Missing auction id'); location.href = 'admin-dashboard.html'; }
+
+let currentAuctionStatus = null;
+let teamsById = {};
+let addLogoData = null;
+let editLogoData = null;
+
+async function load() {
+  const auction = await Api.get(`/api/auctions/${auctionId}`);
+  document.getElementById('auctionName').textContent = auction.name;
+  currentAuctionStatus = auction.status;
+  const balanceEditable = auction.status === 'Draft' || auction.status === 'Ready';
+  const teams = await Api.get(`/api/auctions/${auctionId}/teams`);
+  teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
+  document.getElementById('rows').innerHTML = teams.map(t => `
+    <tr>
+      <td><div class="d-flex align-items-center gap-2">${t.logoUrl ? `<img src="${t.logoUrl}" class="team-admin-logo" alt="">` : ''}<span class="fw-semibold">${t.name}</span></div></td>
+      <td><span class="team-color-swatch" style="background:${t.teamColor || teamColor(teams.indexOf(t))}"></span><span class="small ms-2">${t.teamColor || 'Automatic'}</span></td>
+      <td>
+        ${balanceEditable
+          ? `<div class="d-flex gap-1">
+               <input type="number" class="form-control form-control-sm" style="width:110px" id="balance-${t.id}" value="${t.openingBalance}">
+               <button class="btn btn-sm btn-outline-primary" onclick="saveOpeningBalance(${t.id})">Save</button>
+             </div>`
+          : fmtMoney(t.openingBalance)}
+      </td>
+      <td class="${t.availableBalance < t.openingBalance * 0.1 ? 'balance-low' : 'balance-positive'}">${fmtMoney(t.availableBalance)}</td>
+      <td>${t.rosterCount}</td>
+      <td>${t.isActive ? '✅' : '❌'}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary" onclick="openEditTeam(${t.id})">Edit</button>
+        <a class="btn btn-sm btn-outline-secondary" href="team-ledger.html?teamId=${t.id}&auctionId=${auctionId}">Ledger</a>
+        <button class="btn btn-sm btn-outline-warning" onclick="adjustBalance(${t.id}, '${t.name.replace(/'/g, "\\'")}')">Adjust Balance</button>
+        <button class="btn btn-sm btn-outline-danger" onclick="removeTeam(${t.id})">Delete</button>
+      </td>
+    </tr>`).join('') || '<tr><td colspan="7" class="text-center text-muted">No teams yet</td></tr>';
+  if (!balanceEditable) {
+    document.getElementById('balanceLockedNotice').classList.remove('d-none');
+  } else {
+    document.getElementById('balanceLockedNotice').classList.add('d-none');
+  }
+}
+load().catch(err => alert(err.message));
+
+async function saveOpeningBalance(teamId) {
+  const input = document.getElementById(`balance-${teamId}`);
+  const value = Number(input.value);
+  if (!value || value < 0) { alert('Enter a valid non-negative amount.'); return; }
+  try {
+    await Api.patch(`/api/teams/${teamId}`, { openingBalance: value });
+    load();
+  } catch (err) {
+    if (err.status === 409) alert('Locked: ' + err.message);
+    else alert(err.message);
+  }
+}
+
+document.getElementById('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const payload = {
+      name: document.getElementById('Name').value, logoUrl: addLogoData,
+      teamColor: validColor(document.getElementById('TeamColor').value),
+      openingBalance: document.getElementById('OpeningBalance').value ? Number(document.getElementById('OpeningBalance').value) : null,
+      contactInfo: document.getElementById('ContactInfo').value
+    };
+    await Api.post(`/api/auctions/${auctionId}/teams`, payload);
+    e.target.reset();
+    addLogoData = null;
+    document.getElementById('TeamColor').value = '';
+    document.getElementById('TeamColorPicker').value = '#0ea5e9';
+    renderLogoPreview('addLogoPreview', null);
+    load();
+  } catch (err) { alert(err.message); }
+});
+
+async function removeTeam(id) {
+  if (!await uiConfirm('Delete this team?', { danger: true, okText: 'Delete' })) return;
+  try { await Api.del(`/api/teams/${id}`); load(); } catch (err) { alert(err.message); }
+}
+
+function openEditTeam(id) {
+  const t = teamsById[id];
+  if (!t) return;
+  document.getElementById('editTeamId').value = t.id;
+  document.getElementById('editTeamName').value = t.name;
+  editLogoData = t.logoUrl ?? null;
+  document.getElementById('editTeamColor').value = t.teamColor ?? teamColor(Object.keys(teamsById).indexOf(String(t.id)));
+  syncPickerFromText('editTeamColor', 'editTeamColorPicker');
+  renderLogoPreview('editLogoPreview', editLogoData);
+  document.getElementById('editTeamContactInfo').value = t.contactInfo ?? '';
+  document.getElementById('editTeamNotes').value = t.notes ?? '';
+  document.getElementById('editTeamActive').checked = t.isActive;
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editTeamModal')).show();
+}
+
+document.getElementById('editTeamForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('editTeamId').value;
+  try {
+    const payload = {
+      name: document.getElementById('editTeamName').value, logoUrl: editLogoData ?? '',
+      teamColor: validColor(document.getElementById('editTeamColor').value),
+      contactInfo: document.getElementById('editTeamContactInfo').value,
+      notes: document.getElementById('editTeamNotes').value, isActive: document.getElementById('editTeamActive').checked
+    };
+    await Api.patch(`/api/teams/${id}`, payload);
+    bootstrap.Modal.getInstance(document.getElementById('editTeamModal')).hide();
+    load();
+  } catch (err) { alert(err.message); }
+});
+
+async function adjustBalance(teamId, teamName) {
+  const input = await uiPrompt(`Adjust ${teamName}'s available balance by how much? Use a negative number to deduct, positive to add back.`, '0', { title: 'Adjust balance' });
+  if (input === null) return;
+  const amount = Number(input);
+  if (!amount) { alert('Enter a non-zero number.'); return; }
+  const reason = await uiPrompt('Reason for this adjustment (required for the audit log):', 'Manual balance correction', { title: 'Adjustment reason' });
+  if (!reason) return;
+  try {
+    await Api.post(`/api/auctions/${auctionId}/correction`, { type: 'adjust_balance', teamId, amount, reason });
+    load();
+  } catch (err) { alert(err.message); }
+}
+
+function validColor(value) {
+  const color = value.trim();
+  if (!color) return null;
+  if (!CSS.supports('color', color) || (!/^#[0-9a-f]{3,8}$/i.test(color) && !/^[a-z]{3,30}$/i.test(color))) {
+    throw new Error('Enter a valid color name (for example, blue) or hex code (for example, #0ea5e9).');
+  }
+  return color;
+}
+function syncPickerFromText(textId, pickerId) {
+  const value = document.getElementById(textId).value.trim();
+  if (!CSS.supports('color', value)) return;
+  const canvas = document.createElement('canvas').getContext('2d');
+  canvas.fillStyle = value;
+  canvas.fillRect(0, 0, 1, 1);
+  const [r,g,b] = canvas.getImageData(0,0,1,1).data;
+  document.getElementById(pickerId).value = '#' + [r,g,b].map(x => x.toString(16).padStart(2,'0')).join('');
+}
+function bindColorInputs(textId, pickerId) {
+  document.getElementById(pickerId).addEventListener('input', e => document.getElementById(textId).value = e.target.value);
+  document.getElementById(textId).addEventListener('input', () => syncPickerFromText(textId, pickerId));
+}
+bindColorInputs('TeamColor', 'TeamColorPicker');
+bindColorInputs('editTeamColor', 'editTeamColorPicker');
+
+function renderLogoPreview(id, data) {
+  document.getElementById(id).innerHTML = data ? `<img src="${data}" class="team-admin-logo team-admin-logo-lg" alt="Team logo preview">` : 'No logo';
+}
+async function readLogo(file) {
+  if (!file) return null;
+  if (!file.type.startsWith('image/')) throw new Error('Choose an image file.');
+  if (file.size > 500 * 1024) throw new Error('Team logo must be 500 KB or smaller.');
+  return await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
+}
+document.getElementById('TeamLogoFile').addEventListener('change', async e => { try { addLogoData = await readLogo(e.target.files[0]); renderLogoPreview('addLogoPreview', addLogoData); } catch (err) { e.target.value = ''; showUiNotice(err.message, 'warning'); } });
+document.getElementById('editTeamLogoFile').addEventListener('change', async e => { try { editLogoData = await readLogo(e.target.files[0]); renderLogoPreview('editLogoPreview', editLogoData); } catch (err) { e.target.value = ''; showUiNotice(err.message, 'warning'); } });
+document.getElementById('removeTeamLogo').addEventListener('click', () => { editLogoData = null; document.getElementById('editTeamLogoFile').value = ''; renderLogoPreview('editLogoPreview', null); });
+</script>
+</body>
+</html>

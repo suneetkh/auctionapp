@@ -1,0 +1,315 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Auction — Public Display</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=roster-type-1" rel="stylesheet">
+</head>
+<body class="display-fullscreen">
+<div class="display-layout d-flex flex-column" style="height:100vh; overflow:hidden;">
+  <div class="display-hero mb-2 d-flex align-items-center gap-3" style="flex:0 0 auto;">
+    <img id="auctionLogo" class="d-none display-hero-logo" alt="Auction logo">
+    <div class="display-hero-copy flex-grow-1 text-truncate">
+      <div class="display-eyebrow" id="displayLiveEyebrow">LIVE PLAYER AUCTION</div>
+      <h1 id="auctionName" class="display-hero-title mb-0 text-truncate">Loading...</h1>
+    </div>
+    <span class="display-status-pill" id="statusBadge"></span>
+  </div>
+
+  <div id="displayLiveStrip" class="display-live-strip mb-2" style="flex:0 0 auto;">
+    <div class="display-live-copy">
+      <div class="display-live-label" id="displayPlayerLabel">ON THE BLOCK</div>
+      <div id="displayCurrentPlayer" class="display-current-player">Waiting for the next player</div>
+      <div id="displayCurrentMeta" class="display-subtext">The live draw will appear here.</div>
+    </div>
+    <div class="display-live-price">
+      <div id="displayLeaderLabel" class="display-live-label">CURRENT BID</div>
+      <div id="displayLeaderAmount" class="display-current-amount">&mdash;</div>
+      <div id="displayLeaderTeam" class="display-subtext">No bids yet</div>
+    </div>
+  </div>
+
+  <div class="display-main-grid d-flex gap-2" style="flex:1 1 auto; min-height:0;">
+    <div class="d-flex flex-column flex-grow-1" style="min-width:0;">
+      <h6 class="display-section-title mb-1">🏟️ Team Rosters &amp; Balances</h6>
+      <div id="teamRosters" style="flex:1 1 auto; min-height:0; display:grid; grid-template-columns:repeat(3,1fr); grid-auto-rows:1fr; gap:.5rem;"></div>
+    </div>
+    <aside class="display-side-panel d-flex flex-column" style="flex:0 0 auto; width:240px; min-height:0;">
+      <h6 class="display-section-title mb-1">🏆 Top 5</h6>
+      <div id="topSoldList" class="display-leaderboard" style="flex:0 0 auto;"></div>
+
+      <h6 class="display-section-title mb-1 mt-3">💰 Team Spending</h6>
+      <div id="spenderCallouts" class="d-flex flex-column gap-1" style="flex:0 0 auto;"></div>
+
+      <h6 class="display-section-title mb-1 mt-3">🤝 Sponsors</h6>
+      <div id="sponsorList" class="d-flex flex-column gap-1" style="flex:1 1 auto; overflow-y:auto; min-height:0;"></div>
+    </aside>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/signalr-helper.js?v=numeric-auction-id-1"></script>
+<script src="js/sold-effects.js?v=single-sold-sound-1"></script>
+<script>
+const auctionId = new URLSearchParams(location.search).get('auctionId') || new URLSearchParams(location.search).get('id');
+if (!auctionId) { document.body.innerHTML = '<div class="p-5 text-center text-white"><h3>No auction specified.</h3></div>'; throw new Error('no auction'); }
+
+['Team Rosters & Balances', 'Top Sales', 'Purse Watch', 'Sponsors'].forEach((title, index) => {
+  const heading = document.querySelectorAll('.display-section-title')[index];
+  if (heading) heading.textContent = title;
+});
+
+let teamsById = {};
+let playersById = {};
+let currentAuction = null;
+let teamOrder = [];
+let publicSelectionInProgress = false;
+let publicSelectionTimer = null;
+let publicDrawSoundTimer = null;
+
+// Rows must fit within a fixed-height box that never scrolls the page, so text size has to
+// scale against how many rows might actually appear - which is bounded by the auction's
+// configured Roster Max Size, not just however many happen to be sold right now. A 4-max
+// auction can afford much bigger, more readable text than a 15-max one.
+function rosterSizing(maxRoster) {
+  const n = maxRoster || 12;
+  if (n <= 5) return { row: 1.3, balance: 1.3 };
+  if (n <= 8) return { row: 1.1, balance: 1.2 };
+  if (n <= 12) return { row: 1.0, balance: 1.1 };
+  if (n <= 16) return { row: .92, balance: 1.05 };
+  return { row: .86, balance: 1.0 };
+}
+
+async function refreshTeams() {
+  const [teams, players] = await Promise.all([
+    Api.get(`/api/auctions/${auctionId}/teams`),
+    Api.get(`/api/auctions/${auctionId}/players`)
+  ]);
+  teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
+  teamOrder = teams.map(t => t.id);
+  playersById = Object.fromEntries(players.map(p => [p.id, p]));
+
+  const rosterByTeam = {};
+  players.filter(p => (p.status === 'Sold' || p.isCaptain) && p.teamId).forEach(p => {
+    (rosterByTeam[p.teamId] ||= []).push(p);
+  });
+
+  // 3 teams per row means each row only gets a fraction of the total height (rows = ceil(n/3)
+  // rows sharing the grid's height) - scale sizing down proportionally so the same number of
+  // roster rows still fits within a shorter box, instead of overflowing and forcing a scrollbar.
+  const rowsOfTeams = Math.max(1, Math.ceil(teams.length / 3));
+  const sz = rosterSizing((currentAuction?.rosterMaxSize || 12) * rowsOfTeams);
+  document.getElementById('teamRosters').innerHTML = teams.map((t, idx) => {
+    const roster = rosterByTeam[t.id] || [];
+    const color = t.teamColor || teamColor(idx);
+    const rows = roster.length
+      ? roster.map(p => `
+          <div class="d-flex justify-content-between border-bottom display-border" style="font-size:${sz.row}rem; padding:2px 0;">
+            <span class="text-truncate"><span class="display-player-name">${p.name}</span> <span class="display-player-skill">${p.isCaptain ? 'Captain · ' : ''}${p.role}</span></span>
+            ${p.isCaptain && !(p.captainCost > 0) ? '' : `<span class="fw-semibold display-amount flex-shrink-0 ms-1">${fmtMoney(p.isCaptain ? p.captainCost : p.salePrice)}</span>`}
+          </div>`).join('')
+      : `<div class="display-subtext py-1" style="font-size:${sz.row}rem;">No players yet</div>`;
+    return `
+      <div style="min-width:0; min-height:0;">
+        <div class="card display-team-card p-2 h-100 d-flex flex-column" style="--team-color:${color}">
+          <div class="d-flex align-items-center gap-2 mb-1">
+            ${t.logoUrl ? `<img class="display-team-logo" src="${t.logoUrl}" alt="${t.name} logo">` : ''}
+            <div class="flex-grow-1 text-truncate">
+              <div class="display-team-name text-truncate">${t.name}</div>
+            </div>
+            <div class="d-flex align-items-baseline gap-1 flex-shrink-0">
+              <span class="display-purse-label">Available purse</span>
+              <strong class="display-purse-value" style="font-size:${sz.balance}rem;">${fmtMoney(t.availableBalance)}</strong>
+            </div>
+          </div>
+          <div class="display-roster-scroll" style="flex:1 1 auto; overflow-y:${teams.length > 3 ? 'auto' : 'hidden'}; min-height:0;">${rows}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  const topSold = players.filter(p => p.status === 'Sold' && p.salePrice != null)
+    .sort((a, b) => b.salePrice - a.salePrice)
+    .slice(0, 5);
+  const medals = ['🥇', '🥈', '🥉', '🏅', '🏅'];
+  document.getElementById('topSoldList').innerHTML = topSold.length
+    ? topSold.map((p, i) => `
+        <div class="display-leaderboard-row ${i === 0 ? 'display-leaderboard-first' : ''}" style="padding:.25rem .5rem;">
+          <span class="display-rank">${i + 1}</span>
+          <span class="flex-grow-1 text-truncate">
+            <div class="fw-bold text-truncate" style="font-size:.78rem;">${p.name}</div>
+            <div class="display-subtext text-truncate" style="font-size:.68rem;">${teamsById[p.teamId]?.name || 'Team ' + p.teamId}</div>
+          </span>
+          <span class="fw-bold display-amount" style="font-size:.8rem;">${fmtMoney(p.salePrice)}</span>
+        </div>`).join('')
+    : '<p class="display-subtext small">None yet</p>';
+
+  const spent = teams.map(t => ({ team: t, spent: t.openingBalance - t.availableBalance }));
+  const biggest = spent.length ? spent.reduce((a, b) => (b.spent > a.spent ? b : a)) : null;
+  const lowest = spent.length ? spent.reduce((a, b) => (b.spent < a.spent ? b : a)) : null;
+  const auctionHasStarted = !['Draft', 'Ready'].includes(currentAuction?.status);
+  document.getElementById('spenderCallouts').innerHTML = !biggest ? '' : !auctionHasStarted ? `
+    <div class="display-leaderboard-row" style="padding:.5rem;">
+      <span class="display-stat-icon">i</span>
+      <span class="display-subtext" style="font-size:.72rem;">Spending insights will appear when the auction starts.</span>
+    </div>` : `
+    <div class="display-leaderboard-row" style="padding:.35rem .5rem;">
+      <span style="font-size:1rem;">🔥</span>
+      <span class="flex-grow-1 text-truncate">
+        <div class="display-subtext text-truncate" style="font-size:.62rem;">Biggest Spender</div>
+        <div class="fw-bold text-truncate" style="font-size:.75rem;">${biggest.team.name}</div>
+      </span>
+      <span class="fw-bold display-amount" style="font-size:.72rem;">${fmtMoney(biggest.spent)}</span>
+    </div>
+    <div class="display-leaderboard-row" style="padding:.35rem .5rem;">
+      <span style="font-size:1rem;">🧊</span>
+      <span class="flex-grow-1 text-truncate">
+        <div class="display-subtext text-truncate" style="font-size:.62rem;">Lowest Spender</div>
+        <div class="fw-bold text-truncate" style="font-size:.75rem;">${lowest.team.name}</div>
+      </span>
+      <span class="fw-bold display-amount" style="font-size:.72rem;">${fmtMoney(lowest.spent)}</span>
+    </div>`;
+  const spendingRows = document.querySelectorAll('#spenderCallouts .display-leaderboard-row');
+  if (auctionHasStarted && spendingRows[0]?.firstElementChild) {
+    spendingRows[0].firstElementChild.className = 'display-stat-icon display-stat-hot';
+    spendingRows[0].firstElementChild.textContent = '↑';
+  }
+  if (auctionHasStarted && spendingRows[1]?.firstElementChild) {
+    spendingRows[1].firstElementChild.className = 'display-stat-icon display-stat-cool';
+    spendingRows[1].firstElementChild.textContent = '↓';
+  }
+}
+
+async function refreshState() {
+  const state = await Api.get(`/api/auctions/${auctionId}/state`);
+  currentAuction = state.auction;
+  const showLivePanel = state.auction.rules?.publicLivePanelEnabled === true;
+  document.getElementById('displayLiveEyebrow').classList.toggle('d-none', !showLivePanel);
+  document.getElementById('displayLiveStrip').classList.toggle('d-none', !showLivePanel);
+  SoldEffects.configure({
+    animationEnabled: state.auction.rules?.soldAnimationEnabled !== false,
+    animationStyle: state.auction.rules?.soldAnimationStyle || 'Stamp',
+    soundEnabled: state.auction.rules?.soldSoundEnabled !== false,
+    drawSoundEnabled: state.auction.rules?.drawSoundEnabled !== false,
+    showSoundUnlock: showLivePanel
+  });
+  document.getElementById('auctionName').textContent = state.auction.name;
+  const logoEl = document.getElementById('auctionLogo');
+  if (state.auction.logoDataUri) { logoEl.src = state.auction.logoDataUri; logoEl.classList.remove('d-none'); }
+  else { logoEl.classList.add('d-none'); }
+  document.getElementById('statusBadge').className = 'display-status-pill ' +
+    statusBadgeClass(state.auction.status) + (state.auction.status === 'Live' ? ' is-live' : '');
+  document.getElementById('statusBadge').textContent = humanizeStatus(state.auction.status);
+  await refreshTeams();
+  if (!publicSelectionInProgress) renderLiveStrip(state);
+  await refreshSponsors();
+}
+
+function celebrateSale(payload) {
+  const teamId = payload?.sale?.teamId ?? payload?.player?.teamId;
+  const team = teamsById[teamId];
+  const colorIndex = Math.max(0, teamOrder.indexOf(teamId));
+  SoldEffects.celebrate({
+    saleId: payload?.sale?.id,
+    playerName: payload?.player?.name,
+    teamName: team?.name || `Team ${teamId}`,
+    amount: fmtMoney(payload?.sale?.finalAmount ?? payload?.player?.salePrice),
+    teamColor: team?.teamColor || teamColor(colorIndex)
+  });
+}
+
+function renderLiveStrip(state) {
+  const player = state.currentPlayer;
+  const validBids = (state.recentBids || []).filter(b => b.isValid);
+  const leader = validBids.length
+    ? validBids.reduce((highest, bid) => bid.amount > highest.amount ? bid : highest)
+    : null;
+
+  if (!player) {
+    document.getElementById('displayLiveStrip').classList.remove('has-active-player', 'is-selecting-player');
+    document.getElementById('displayPlayerLabel').textContent = 'ON THE BLOCK';
+    document.getElementById('displayCurrentPlayer').textContent = 'Waiting for the next player';
+    document.getElementById('displayCurrentMeta').textContent = 'The live draw will appear here.';
+    document.getElementById('displayLeaderLabel').textContent = 'CURRENT BID';
+    document.getElementById('displayLeaderAmount').innerHTML = '&mdash;';
+    document.getElementById('displayLeaderTeam').textContent = 'No bids yet';
+    return;
+  }
+
+  const floor = Math.max(player.minimumBidOverride || 0, player.basePrice, state.auction.minimumBidAmount);
+  document.getElementById('displayLiveStrip').classList.remove('is-selecting-player');
+  document.getElementById('displayLiveStrip').classList.add('has-active-player');
+  document.getElementById('displayPlayerLabel').textContent = '● NOW BIDDING';
+  document.getElementById('displayCurrentPlayer').textContent = player.name;
+  document.getElementById('displayCurrentMeta').textContent = `${player.role || 'Player'} · Base ${fmtMoney(floor)}`;
+  document.getElementById('displayLeaderLabel').textContent = leader ? 'CURRENT BID' : 'OPENING AT';
+  document.getElementById('displayLeaderAmount').textContent = fmtMoney(leader?.amount ?? floor);
+  document.getElementById('displayLeaderTeam').textContent = leader
+    ? (teamsById[leader.teamId]?.name || `Team ${leader.teamId}`)
+    : 'Bidding is open';
+}
+
+function showPublicSelection(payload) {
+  publicSelectionInProgress = true;
+  if (publicSelectionTimer) clearTimeout(publicSelectionTimer);
+  if (publicDrawSoundTimer) clearInterval(publicDrawSoundTimer);
+  let soundStep = 0;
+  SoldEffects.playDrawTick(soundStep++);
+  publicDrawSoundTimer = setInterval(() => SoldEffects.playDrawTick(soundStep++), 280);
+  document.getElementById('displayLiveStrip').classList.remove('has-active-player');
+  document.getElementById('displayLiveStrip').classList.add('is-selecting-player');
+  document.getElementById('displayPlayerLabel').textContent = 'SELECTING PLAYER';
+  document.getElementById('displayCurrentPlayer').textContent = 'Selecting the next player…';
+  document.getElementById('displayCurrentMeta').textContent = 'Drawing from the remaining player pool';
+  document.getElementById('displayLeaderLabel').textContent = 'CURRENT BID';
+  document.getElementById('displayLeaderAmount').innerHTML = '&mdash;';
+  document.getElementById('displayLeaderTeam').textContent = 'Please wait';
+  publicSelectionTimer = setTimeout(() => {
+    publicSelectionInProgress = false;
+    if (publicDrawSoundTimer) clearInterval(publicDrawSoundTimer);
+    publicDrawSoundTimer = null;
+    refreshState().catch(console.error);
+  }, Number(payload?.durationMs || 2500) + 1500);
+}
+
+function revealPublicSelection() {
+  publicSelectionInProgress = false;
+  if (publicSelectionTimer) clearTimeout(publicSelectionTimer);
+  if (publicDrawSoundTimer) clearInterval(publicDrawSoundTimer);
+  publicDrawSoundTimer = null;
+  SoldEffects.playDrawReveal();
+  publicSelectionTimer = null;
+  refreshState().catch(console.error);
+}
+
+async function refreshSponsors() {
+  const sponsors = await Api.get(`/api/auctions/${auctionId}/sponsors`);
+  document.getElementById('sponsorList').innerHTML = sponsors.length
+    ? sponsors.map(s => `
+        <div class="display-leaderboard-row" style="padding:.3rem .5rem;">
+          <span class="sponsor-logo-display"><img src="${s.logoDataUri}" alt="${s.name || 'Sponsor'}" style="display:block;width:auto;height:auto;max-width:100%;max-height:100%;object-fit:contain;object-position:center;"></span>
+          <span class="fw-bold sponsor-name-display">${s.name || 'Sponsor'}</span>
+        </div>`).join('')
+    : '<p class="display-subtext small mb-0">None yet</p>';
+}
+
+refreshState().catch(console.error);
+
+createAuctionConnection(auctionId, {
+  auction_status_changed: refreshState,
+  auction_settings_changed: refreshState,
+  player_selecting: showPublicSelection,
+  player_selected: revealPublicSelection,
+  bid_placed: refreshState,
+  bid_rejected: refreshState,
+  bid_undone: refreshState,
+  player_sold: payload => { celebrateSale(payload); refreshState(); },
+  player_unsold: refreshState,
+  balance_updated: refreshTeams,
+  unsold_pool_opened: refreshState,
+  auction_completed: refreshState,
+  correction_applied: refreshState,
+}, refreshState);
+</script>
+</body>
+</html>

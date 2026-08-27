@@ -1,0 +1,137 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Admin Dashboard</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=buttons-2" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<div class="container">
+  <div class="row mb-4">
+    <div class="col-md-3"><div class="card text-center"><div class="card-body"><h6 class="text-muted">Draft</h6><h2 id="cnt-Draft">0</h2></div></div></div>
+    <div class="col-md-3"><div class="card text-center"><div class="card-body"><h6 class="text-muted">Live</h6><h2 id="cnt-Live" class="text-primary">0</h2></div></div></div>
+    <div class="col-md-3"><div class="card text-center"><div class="card-body"><h6 class="text-muted">Completed</h6><h2 id="cnt-Completed" class="text-success">0</h2></div></div></div>
+    <div class="col-md-3"><div class="card text-center"><div class="card-body"><h6 class="text-muted">Total</h6><h2 id="cnt-Total">0</h2></div></div></div>
+  </div>
+
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>Your Auctions</h4>
+    <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#newAuctionModal">+ New Auction</button>
+  </div>
+
+  <div class="modal fade" id="newAuctionModal" tabindex="-1">
+    <div class="modal-dialog">
+      <div class="modal-content">
+        <form id="newAuctionForm">
+          <div class="modal-header">
+            <h5 class="modal-title">New Auction</h5>
+            <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+          </div>
+          <div class="modal-body">
+            <div class="mb-3">
+              <label class="form-label small">Auction Name</label>
+              <input class="form-control" id="newAuctionName" required>
+            </div>
+            <div class="mb-3">
+              <label class="form-label small">Sport Type</label>
+              <input class="form-control" id="newAuctionSport" value="Cricket" required>
+            </div>
+            <p class="text-muted small mb-0">You can configure balances, minimum bid, increment, and all other rules on the next screen.</p>
+          </div>
+          <div class="modal-footer">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Create &amp; Configure</button>
+          </div>
+        </form>
+      </div>
+    </div>
+  </div>
+
+  <div class="table-responsive"><table class="table table-hover bg-white shadow-sm">
+    <thead><tr><th>Name</th><th>Sport</th><th>Status</th><th>Teams</th><th>Players</th><th class="text-center">Actions</th></tr></thead>
+    <tbody id="auctionRows"><tr><td colspan="6" class="text-center text-muted">Loading...</td></tr></tbody>
+  </table></div>
+</div>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/nav.js?v=users-access-1"></script>
+<script src="js/ui.js?v=notices-2"></script>
+<script>
+if (!requireAuth(['SuperAdmin', 'AuctionAdmin'])) { throw new Error('unauth'); }
+renderNavbar('admin-dashboard.html');
+
+async function load() {
+  const auctions = await Api.get('/api/auctions');
+  const counts = { Draft: 0, Ready: 0, Live: 0, Paused: 0, MainRoundComplete: 0, UnsoldPoolOpen: 0, Completed: 0, Archived: 0 };
+  auctions.forEach(a => counts[a.status] = (counts[a.status] || 0) + 1);
+  document.getElementById('cnt-Draft').textContent = counts.Draft || 0;
+  document.getElementById('cnt-Live').textContent = (counts.Live || 0) + (counts.Paused || 0);
+  document.getElementById('cnt-Completed').textContent = (counts.Completed || 0) + (counts.Archived || 0);
+  document.getElementById('cnt-Total').textContent = auctions.length;
+
+  const rows = await Promise.all(auctions.map(async a => {
+    let teamCount = '-', playerCount = '-';
+    try {
+      const teams = await Api.get(`/api/auctions/${a.id}/teams`);
+      const players = await Api.get(`/api/auctions/${a.id}/players`);
+      teamCount = teams.length; playerCount = players.length;
+    } catch (e) {}
+    const liveBtn = (a.status === 'Live' || a.status === 'Paused' || a.status === 'UnsoldPoolOpen')
+      ? `<a class="btn btn-sm btn-primary" href="live-auction.html?auctionId=${a.id}">Continue Live</a>`
+      : `<a class="btn btn-sm btn-outline-secondary" href="live-auction.html?auctionId=${a.id}">Live Room</a>`;
+    return `<tr>
+      <td>
+        <div class="d-flex align-items-center gap-2">
+          ${a.logoDataUri ? `<img src="${a.logoDataUri}" class="rounded" style="width:28px;height:28px;object-fit:cover;" alt="">` : ''}
+          <span>${a.name}</span>
+        </div>
+      </td><td>${a.sportType}</td>
+      <td><span class="badge ${statusBadgeClass(a.status)}">${humanizeStatus(a.status)}</span></td>
+      <td>${teamCount}</td><td>${playerCount}</td>
+      <td class="text-end">
+        <div class="d-inline-flex flex-wrap justify-content-end gap-1">
+          <a class="btn btn-sm btn-outline-primary" href="auction-setup.html?auctionId=${a.id}">Setup</a>
+          <a class="btn btn-sm btn-outline-primary" href="teams.html?auctionId=${a.id}">Teams</a>
+          <a class="btn btn-sm btn-outline-primary" href="players.html?auctionId=${a.id}">Players</a>
+          ${liveBtn}
+          <a class="btn btn-sm btn-outline-secondary" href="reports.html?auctionId=${a.id}">Reports</a>
+        </div>
+      </td>
+    </tr>`;
+  }));
+  document.getElementById('auctionRows').innerHTML = rows.join('') || '<tr><td colspan="6" class="text-center text-muted">No auctions yet</td></tr>';
+}
+load().catch(err => alert(err.message));
+
+document.getElementById('newAuctionForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  try {
+    const auction = await Api.post('/api/auctions', {
+      name: document.getElementById('newAuctionName').value,
+      sportType: document.getElementById('newAuctionSport').value,
+      tournamentName: '',
+      dateTime: new Date().toISOString(),
+      venueOrOnlineLabel: 'Online',
+      currencyLabel: 'Points',
+      defaultTeamBalance: 10000,
+      minimumBidAmount: 100,
+      bidIncrementAmount: 50,
+      rosterMinSize: null,
+      rosterMaxSize: null,
+      visibility: 'Private',
+      biddingMode: 'AdminControlled',
+      unsoldRoundsEnabled: true,
+      maxUnsoldRounds: 2,
+      allowReducedBasePriceInUnsold: true,
+      customUnsoldMinBid: null,
+      allowWheelSelectionFromPool: true,
+      minRemainingPurseRule: null
+    });
+    location.href = `auction-setup.html?auctionId=${auction.id}`;
+  } catch (err) { alert(err.message); }
+});
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

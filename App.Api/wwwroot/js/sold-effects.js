@@ -1,0 +1,165 @@
+// Shared, auction-rule-controlled celebration for newly completed player sales.
+(function () {
+  const settings = { animationEnabled: true, animationStyle: 'Stamp', soundEnabled: true, drawSoundEnabled: true, showSoundUnlock: false };
+  let audioContext = null;
+  let lastSaleKey = null;
+  let unlockButton = null;
+  let masterSoundEnabled = true;
+  let masterInitialized = false;
+
+  function getAudioContext() {
+    if (!audioContext) {
+      const AudioContextClass = window.AudioContext || window.webkitAudioContext;
+      if (AudioContextClass) audioContext = new AudioContextClass();
+    }
+    return audioContext;
+  }
+
+  async function unlockAudio() {
+    const context = getAudioContext();
+    if (context?.state === 'suspended') await context.resume();
+    updateUnlockButton();
+    return context;
+  }
+
+  async function toggleMasterSound() {
+    const currentlyActive = masterSoundEnabled && audioContext?.state === 'running';
+    masterSoundEnabled = !currentlyActive;
+    localStorage.setItem('publicDisplaySound', masterSoundEnabled ? 'enabled' : 'disabled');
+    if (masterSoundEnabled) await unlockAudio();
+    updateUnlockButton();
+  }
+
+  function updateUnlockButton() {
+    if ((!settings.soundEnabled && !settings.drawSoundEnabled) || !settings.showSoundUnlock) {
+      unlockButton?.remove();
+      unlockButton = null;
+      return;
+    }
+    if (!unlockButton) {
+      unlockButton = document.createElement('button');
+      unlockButton.type = 'button';
+      unlockButton.className = 'sold-sound-unlock';
+      unlockButton.addEventListener('click', () => toggleMasterSound().catch(() => {}));
+      document.body.appendChild(unlockButton);
+    }
+    const active = masterSoundEnabled && audioContext?.state === 'running';
+    unlockButton.textContent = active ? 'Disable sound' : 'Enable sound';
+    unlockButton.setAttribute('aria-label', active ? 'Disable all sounds on this display' : 'Enable all sounds on this display');
+  }
+
+  function strike(context, start, strength) {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = 'triangle';
+    oscillator.frequency.setValueAtTime(175, start);
+    oscillator.frequency.exponentialRampToValueAtTime(62, start + .13);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.exponentialRampToValueAtTime(strength, start + .006);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + .22);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + .24);
+  }
+
+  async function playSoldSound() {
+    if (!settings.soundEnabled || !masterSoundEnabled) return;
+    const context = await unlockAudio();
+    if (!context || context.state !== 'running') {
+      updateUnlockButton();
+      return;
+    }
+    const start = context.currentTime + .015;
+    strike(context, start, .28);
+    strike(context, start + .19, .2);
+  }
+
+  function tone(context, frequency, start, duration, strength, type = 'sine') {
+    const oscillator = context.createOscillator();
+    const gain = context.createGain();
+    oscillator.type = type;
+    oscillator.frequency.setValueAtTime(frequency, start);
+    gain.gain.setValueAtTime(.0001, start);
+    gain.gain.exponentialRampToValueAtTime(strength, start + .008);
+    gain.gain.exponentialRampToValueAtTime(.0001, start + duration);
+    oscillator.connect(gain).connect(context.destination);
+    oscillator.start(start);
+    oscillator.stop(start + duration + .02);
+  }
+
+  function playDrawTick(step = 0) {
+    if (!settings.drawSoundEnabled || !masterSoundEnabled) return;
+    const context = getAudioContext();
+    if (!context || context.state !== 'running') { updateUnlockButton(); return; }
+    tone(context, 330 + ((Number(step) % 4) * 24), context.currentTime + .005, .055, .035, 'sine');
+  }
+
+  function playDrawReveal() {
+    if (!settings.drawSoundEnabled || !masterSoundEnabled) return;
+    const context = getAudioContext();
+    if (!context || context.state !== 'running') { updateUnlockButton(); return; }
+    const start = context.currentTime + .01;
+    tone(context, 523.25, start, .2, .085, 'sine');
+    tone(context, 659.25, start + .1, .25, .075, 'sine');
+    tone(context, 783.99, start + .2, .32, .07, 'sine');
+  }
+
+  function showAnimation(details) {
+    if (!settings.animationEnabled) return;
+    document.querySelector('.sold-celebration')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'sold-celebration';
+    overlay.setAttribute('role', 'status');
+    overlay.setAttribute('aria-live', 'assertive');
+    overlay.style.setProperty('--sold-team-color', details.teamColor || '#16a34a');
+
+    const panel = document.createElement('div');
+    panel.className = 'sold-celebration-panel';
+    const visual = document.createElement('div');
+    if (settings.animationStyle === 'Hammer') {
+      visual.className = 'sold-hammer-stage';
+      visual.innerHTML = '<div class="sold-hammer" aria-hidden="true">🔨</div><div class="sold-hammer-impact">SOLD</div>';
+    } else {
+      visual.className = 'sold-stamp';
+      visual.textContent = 'SOLD';
+    }
+    const player = document.createElement('div');
+    player.className = 'sold-player-name';
+    player.textContent = details.playerName || 'Player';
+    const result = document.createElement('div');
+    result.className = 'sold-result-line';
+    result.textContent = `${details.teamName || 'Winning team'} · ${details.amount || ''}`;
+
+    panel.append(visual, player, result);
+    overlay.appendChild(panel);
+    document.body.appendChild(overlay);
+    window.setTimeout(() => overlay.classList.add('sold-celebration-out'), 3000);
+    window.setTimeout(() => overlay.remove(), 3500);
+  }
+
+  function configure(options) {
+    Object.assign(settings, options || {});
+    if (!masterInitialized) {
+      const stored = localStorage.getItem('publicDisplaySound');
+      masterSoundEnabled = settings.showSoundUnlock ? stored === 'enabled' : true;
+      masterInitialized = true;
+    }
+    updateUnlockButton();
+  }
+
+  function celebrate(details) {
+    const saleKey = details?.saleId == null ? null : String(details.saleId);
+    if (saleKey && saleKey === lastSaleKey) return;
+    if (saleKey) lastSaleKey = saleKey;
+    playSoldSound();
+    showAnimation(details || {});
+  }
+
+  // Priming on the first gesture lets the operator console play immediately after a sale.
+  document.addEventListener('pointerdown', () => {
+    if ((settings.soundEnabled || settings.drawSoundEnabled) && masterSoundEnabled) unlockAudio().catch(() => {});
+  }, { once: true, capture: true });
+
+  window.SoldEffects = { configure, celebrate, unlockAudio, playDrawTick, playDrawReveal };
+})();

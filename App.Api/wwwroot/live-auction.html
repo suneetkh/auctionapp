@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Live Auction Console</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=roster-type-1" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<div id="auctionToastStack" class="auction-toast-stack" aria-live="assertive" aria-atomic="false"></div>
+
+<div class="container-fluid px-4">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <div class="d-flex align-items-center gap-3">
+      <img id="auctionLogo" class="d-none rounded-circle" style="width:48px;height:48px;object-fit:cover;box-shadow:0 1px 4px rgba(0,0,0,.2);" alt="Auction logo">
+      <div>
+        <h4 class="mb-1 d-flex align-items-center gap-2">
+          <span id="auctionName"></span> <span class="badge" id="statusBadge"></span>
+          <small class="text-muted">Round <span id="roundNum">0</span></small>
+        </h4>
+        <div class="small text-muted">
+          Players:
+          <span class="badge bg-primary" id="remainingCount" title="Players not yet sold or unsold">0 remaining</span>
+          <span class="badge bg-success" id="soldCountBadge">0 sold</span>
+          <span class="badge bg-danger" id="unsoldCountBadge">0 unsold</span>
+        </div>
+      </div>
+    </div>
+    <div class="btn-group auction-header-actions">
+      <a class="btn btn-outline-secondary btn-sm" href="admin-dashboard.html">← Dashboard</a>
+      <button class="btn btn-outline-warning btn-sm" onclick="callAction('pause')">Pause</button>
+      <button class="btn btn-outline-primary btn-sm" onclick="callAction('resume')">Resume</button>
+      <button class="btn btn-outline-dark btn-sm" onclick="openUnsoldPool()">Open Unsold Pool</button>
+      <button class="btn btn-outline-danger btn-sm" id="undoBtn" onclick="undoLastSale()" disabled>↩ Undo Last Sale</button>
+      <button class="btn btn-outline-secondary btn-sm" onclick="completeAuction()">Complete</button>
+      <a class="btn btn-outline-info btn-sm" id="displayLink" href="#" target="_blank">Public Display ↗</a>
+    </div>
+  </div>
+
+  <div class="row">
+    <div class="col-lg-4">
+      <div class="card player-card p-4 mb-3" id="playerCard" draggable="false">
+        <p class="text-muted text-center">No player selected. Click Spin to choose one.</p>
+      </div>
+      <div class="player-action-bar mb-3">
+        <button class="player-action player-action-spin" id="spinBtn" onclick="spin()">
+          <span class="player-action-icon" aria-hidden="true">↻</span>
+          <span class="player-action-copy"><strong>Spin &amp; Select</strong><small>Draw the next player</small></span>
+        </button>
+        <button class="player-action player-action-unsold" onclick="markUnsold()">
+          <span class="player-action-icon" aria-hidden="true">×</span>
+          <span class="player-action-copy"><strong>Mark Unsold</strong><small>Move to the unsold pool</small></span>
+        </button>
+      </div>
+
+      <div class="card p-3 mb-3" id="leaderBanner" style="display:none; background:#eef7ff;">
+        <div class="d-flex justify-content-between align-items-center">
+          <div>Current leader: <strong id="leaderTeamName">-</strong> at <strong id="leaderAmount">-</strong></div>
+          <button class="btn btn-success" onclick="sellToLeader()">✅ Sell to Leader</button>
+        </div>
+      </div>
+
+      <div class="card p-3 mb-3">
+        <div class="d-flex justify-content-between align-items-center mb-2">
+          <h6 class="mb-0" id="placeBidHeading">Place Bid</h6>
+          <button class="btn btn-sm btn-outline-danger" id="undoBidBtn" onclick="undoLastBid()" disabled>&#x21A9; Undo Last Bid</button>
+        </div>
+        <div class="row g-2">
+          <div class="col-md-5">
+            <select class="form-select" id="teamSelect"></select>
+          </div>
+          <div class="col-md-3">
+            <input class="form-control" id="bidAmount" type="number" placeholder="Amount">
+          </div>
+          <div class="col-md-4 d-flex gap-1">
+            <button class="btn btn-primary flex-fill" onclick="placeBid()">Bid</button>
+          </div>
+        </div>
+        <div class="d-flex justify-content-between mt-2">
+          <button class="btn btn-sm btn-outline-success" onclick="sellManual()">✅ Sell selected team @ amount</button>
+        </div>
+        <div id="keyboardBidStatus" class="keyboard-bid-status mt-2">Keyboard: &uarr;/&darr; select team &middot; &larr;/&rarr; adjust amount &middot; Enter bids &middot; Esc clears</div>
+      </div>
+
+      <div class="card p-3 mb-3">
+        <h6>Bid History <span id="bidHistoryPlayerName" class="text-muted"></span></h6>
+        <div id="bidHistory" style="max-height:250px; overflow-y:auto;"></div>
+      </div>
+
+      <div class="card p-3">
+        <ul class="nav nav-tabs nav-tabs-sm mb-2">
+          <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-recentSold">Recently Sold</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-topSold">🏆 Top 5</a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-unsold">Unsold <span class="badge bg-secondary" id="unsoldCount">0</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-reauction">🔁 In This Round <span class="badge bg-secondary" id="reauctionCount">0</span></a></li>
+        </ul>
+        <div class="tab-content">
+          <div class="tab-pane fade show active" id="tab-recentSold"><div id="recentSold" class="history-box"></div></div>
+          <div class="tab-pane fade" id="tab-topSold"><div id="topSoldList" class="history-box"></div></div>
+          <div class="tab-pane fade" id="tab-unsold"><div id="unsoldList" class="history-box"></div></div>
+          <div class="tab-pane fade" id="tab-reauction"><div id="reauctionList" class="history-box"></div></div>
+        </div>
+      </div>
+    </div>
+
+    <div class="col-lg-8">
+      <div class="card p-3 mb-3 teams-section">
+        <div class="d-flex justify-content-between align-items-center teams-section-header">
+          <h5 class="mb-0">🏟️ Teams, Balances &amp; Rosters</h5>
+          <small class="teams-section-hint">🖱 Drag the player card onto a team to sell</small>
+        </div>
+        <small class="text-muted d-block mt-1">Click a team to place its next bid.</small>
+        <div id="teamBoxes" class="row g-3 mt-1"></div>
+      </div>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/@microsoft/signalr@8.0.0/dist/browser/signalr.min.js"></script>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/nav.js?v=users-access-1"></script>
+<script src="js/signalr-helper.js?v=numeric-auction-id-1"></script>
+<script src="js/ui.js?v=notices-2"></script>
+<script src="js/sold-effects.js?v=single-sold-sound-1"></script>
+<script>
+if (!requireAuth(['SuperAdmin', 'AuctionAdmin'])) { throw new Error('unauth'); }
+renderNavbar('live-auction.html');
+const auctionId = new URLSearchParams(location.search).get('auctionId') || new URLSearchParams(location.search).get('id');
+if (!auctionId) { alert('Missing auctionId'); location.href = 'admin-dashboard.html'; }
+document.getElementById('displayLink').href = `display.html?auctionId=${auctionId}`;
+
+let teamsById = {};
+let playersById = {};
+let currentPlayer = null;
+let currentAuction = null;
+let leadingBid = null; // { teamId, amount } or null
+let isSpinning = false;
+let bidAmountUserEdited = false;
+let lastSaleId = null;
+let lastSoldPlayerId = null;
+let teamOrder = [];
+let selectedTeamId = null;
+let bidInFlight = false;
+let postSaleBasePrice = null;
+let selectionPoolPlayers = [];
+let selectionMeterTimer = null;
+
+document.getElementById('bidAmount').addEventListener('input', () => {
+  bidAmountUserEdited = true;
+  updateKeyboardBidStatus();
+});
+document.getElementById('teamSelect').addEventListener('change', (event) => {
+  setSelectedTeam(Number(event.target.value) || null);
+});
+
+document.addEventListener('keydown', (event) => {
+  const shortcutKeys = ['ArrowLeft', 'ArrowRight', 'ArrowUp', 'ArrowDown', 'Enter', 'Escape'];
+  if (!shortcutKeys.includes(event.key) || event.ctrlKey || event.altKey || event.metaKey || event.shiftKey) return;
+  if (!currentPlayer || !['Selected', 'Bidding'].includes(currentPlayer.status) ||
+      !currentAuction || currentAuction.bidIncrementAmount <= 0) return;
+
+  const target = event.target;
+  const isFormControl = target instanceof HTMLInputElement || target instanceof HTMLTextAreaElement || target instanceof HTMLSelectElement;
+  if (isFormControl && !['bidAmount', 'teamSelect'].includes(target.id)) return;
+  if (document.querySelector('.modal.show')) return;
+
+  event.preventDefault();
+  if (event.key === 'ArrowUp' || event.key === 'ArrowDown') {
+    selectTeamByOffset(event.key === 'ArrowDown' ? 1 : -1);
+    return;
+  }
+  if (event.key === 'Enter') {
+    if (!event.repeat) placeBid();
+    return;
+  }
+  if (event.key === 'Escape') {
+    setSelectedTeam(null);
+    return;
+  }
+
+  const input = document.getElementById('bidAmount');
+  const currentAmount = Number(input.value);
+  const nextValidBid = Number(nextBidAmount());
+  const playerFloor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  // A sale may use the leader's exact amount; only a new bid must be leader + increment.
+  // This lets Left Arrow step from the suggested next bid back to the current sale value.
+  const lowerBound = leadingBid ? Number(leadingBid.amount) : playerFloor;
+  const amount = Number.isFinite(currentAmount) && currentAmount > 0 ? currentAmount : nextValidBid;
+  const increment = Number(currentAuction.bidIncrementAmount);
+  // Snap to the auction's valid increment grid. For example, with a 100 baseline and
+  // 100 increment, Right from a manually typed 145 becomes 200 (not 245), while Left
+  // becomes 100. Exact valid amounts still move by one full increment.
+  const gridPosition = (amount - lowerBound) / increment;
+  const epsilon = 1e-9;
+  const steps = event.key === 'ArrowRight'
+    ? Math.max(leadingBid ? 1 : 0, Math.floor(gridPosition + epsilon) + 1)
+    : Math.max(0, Math.ceil(gridPosition - epsilon) - 1);
+  const adjusted = lowerBound + (steps * increment);
+  input.value = Number(adjusted.toFixed(10));
+  bidAmountUserEdited = true;
+  updateKeyboardBidStatus();
+  input.classList.add('border-primary');
+  setTimeout(() => input.classList.remove('border-primary'), 180);
+});
+
+function setSelectedTeam(teamId) {
+  selectedTeamId = teamId && teamsById[teamId] ? Number(teamId) : null;
+  document.getElementById('teamSelect').value = selectedTeamId || '';
+  document.querySelectorAll('.team-box').forEach(box => {
+    box.classList.toggle('keyboard-selected', Number(box.dataset.teamId) === selectedTeamId);
+  });
+  updateKeyboardBidStatus();
+}
+
+function selectTeamByOffset(offset) {
+  if (!teamOrder.length) return;
+  const currentIndex = teamOrder.indexOf(selectedTeamId);
+  const nextIndex = currentIndex < 0
+    ? (offset > 0 ? 0 : teamOrder.length - 1)
+    : (currentIndex + offset + teamOrder.length) % teamOrder.length;
+  setSelectedTeam(teamOrder[nextIndex]);
+  document.querySelector(`.team-box[data-team-id="${selectedTeamId}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+}
+
+function updateKeyboardBidStatus() {
+  const status = document.getElementById('keyboardBidStatus');
+  if (!selectedTeamId || !teamsById[selectedTeamId]) {
+    status.textContent = 'Keyboard: ↑/↓ select team · ←/→ adjust amount · Enter bids · Esc clears';
+    status.classList.remove('has-selection');
+    return;
+  }
+  const amount = Number(document.getElementById('bidAmount').value);
+  status.textContent = `Selected: ${teamsById[selectedTeamId].name} · Bid: ${amount > 0 ? fmtMoney(amount) : '—'} · Press Enter to place`;
+  status.classList.add('has-selection');
+}
+
+const playerCardEl = document.getElementById('playerCard');
+playerCardEl.addEventListener('dragstart', (e) => {
+  if (!currentPlayer) { e.preventDefault(); return; }
+  e.dataTransfer.setData('text/plain', String(currentPlayer.id));
+  e.dataTransfer.effectAllowed = 'move';
+  playerCardEl.classList.add('being-dragged');
+});
+playerCardEl.addEventListener('dragend', () => playerCardEl.classList.remove('being-dragged'));
+
+function renderPlayerCard(player) {
+  currentPlayer = player;
+  document.getElementById('bidHistoryPlayerName').textContent = player ? `(${player.name})` : '';
+  if (!player) {
+    playerCardEl.draggable = false;
+    playerCardEl.classList.remove('bidding-active');
+    playerCardEl.innerHTML = '<p class="text-muted text-center">No player selected. Click Spin to choose one.</p>';
+    document.getElementById('placeBidHeading').textContent = 'Place Bid';
+    const spinCopy = document.querySelector('#spinBtn .player-action-copy');
+    if (spinCopy) spinCopy.innerHTML = '<strong>Spin &amp; Select</strong><small>Draw the next player</small>';
+    return;
+  }
+  playerCardEl.draggable = true;
+  playerCardEl.classList.add('bidding-active');
+  const photo = player.photoUrl ? `<img class="active-player-photo" src="${player.photoUrl}" alt="${player.name}">` : '';
+  playerCardEl.innerHTML = `
+    <div class="active-player-kicker"><span class="active-player-live-dot"></span> NOW BIDDING</div>
+    <div class="active-player-identity ${player.photoUrl ? 'has-photo' : 'no-photo'}">
+      ${photo}
+      <div class="min-width-0 flex-grow-1 text-center">
+        <h2 class="active-player-name">${player.name}</h2>
+        <div class="active-player-meta"><span class="active-player-description">${player.role}${player.skillTags ? ' · ' + player.skillTags : ''}</span><span class="active-player-base">Base ${fmtMoney(player.basePrice)}</span></div>
+      </div>
+    </div>
+    <div class="active-player-bid-strip">
+      <div><small>CURRENT BID</small><strong id="activePlayerBid">No bids yet</strong></div>
+      <div><small>LEADING TEAM</small><strong id="activePlayerLeader">Waiting for first bid</strong></div>
+    </div>
+    <div class="active-player-drag-hint">Drag this player onto a team to sell</div>`;
+  document.getElementById('placeBidHeading').textContent = `Place Bid for ${player.name}`;
+  const spinCopy = document.querySelector('#spinBtn .player-action-copy');
+  if (spinCopy) spinCopy.innerHTML = '<strong>Bidding in progress</strong><small>Finish this player first</small>';
+  updateActivePlayerBidDetails();
+}
+
+function updateActivePlayerBidDetails() {
+  const bid = document.getElementById('activePlayerBid');
+  const leader = document.getElementById('activePlayerLeader');
+  if (!bid || !leader) return;
+  bid.textContent = leadingBid ? fmtMoney(leadingBid.amount) : 'No bids yet';
+  leader.textContent = leadingBid ? (teamsById[leadingBid.teamId]?.name || `Team ${leadingBid.teamId}`) : 'Waiting for first bid';
+}
+
+function startSelectionMeter() {
+  stopSelectionMeter();
+  const names = selectionPoolPlayers.map(player => player.name);
+  const segmentCount = 11;
+  let segmentIndex = 0;
+  let segmentDirection = 1;
+  let nameIndex = 0;
+  let nameDirection = 1;
+  let ticks = 0;
+
+  playerCardEl.draggable = false;
+  playerCardEl.classList.remove('bidding-active', 'player-reveal');
+  playerCardEl.classList.add('selecting-player');
+  playerCardEl.innerHTML = `
+    <div class="player-selection-meter">
+      <div class="player-meter-kicker">SCANNING PLAYER POOL</div>
+      <div class="player-meter-names">
+        <span class="player-meter-side" id="selectionMeterPrev">${names.at(-1) || ''}</span>
+        <strong class="player-meter-name" id="selectionMeterName">${names[0] || 'Selecting...'}</strong>
+        <span class="player-meter-side" id="selectionMeterNext">${names[1] || ''}</span>
+      </div>
+      <div class="player-meter-track" aria-hidden="true">
+        ${Array.from({ length: segmentCount }, () => '<span class="player-meter-segment"></span>').join('')}
+      </div>
+      <div class="player-meter-count">${names.length} remaining player${names.length === 1 ? '' : 's'}</div>
+    </div>`;
+
+  const updateMeter = () => {
+    const segments = playerCardEl.querySelectorAll('.player-meter-segment');
+    segments.forEach((segment, index) => {
+      segment.classList.toggle('active', index === segmentIndex);
+      segment.classList.toggle('near', Math.abs(index - segmentIndex) === 1);
+    });
+    if (ticks % 3 === 0 && names.length > 1) {
+      SoldEffects.playDrawTick(ticks / 3);
+      nameIndex += nameDirection;
+      if (nameIndex >= names.length - 1 || nameIndex <= 0) nameDirection *= -1;
+      const nameEl = document.getElementById('selectionMeterName');
+      const previousNameEl = document.getElementById('selectionMeterPrev');
+      const nextNameEl = document.getElementById('selectionMeterNext');
+      if (nameEl) {
+        nameEl.textContent = names[nameIndex];
+        if (previousNameEl) previousNameEl.textContent = names[(nameIndex - 1 + names.length) % names.length];
+        if (nextNameEl) nextNameEl.textContent = names[(nameIndex + 1) % names.length];
+        nameEl.style.animation = 'none';
+        void nameEl.offsetWidth;
+        nameEl.style.animation = '';
+      }
+    }
+    segmentIndex += segmentDirection;
+    if (segmentIndex >= segmentCount - 1 || segmentIndex <= 0) segmentDirection *= -1;
+    ticks++;
+  };
+  updateMeter();
+  selectionMeterTimer = window.setInterval(updateMeter, 90);
+}
+
+function stopSelectionMeter() {
+  if (selectionMeterTimer) window.clearInterval(selectionMeterTimer);
+  selectionMeterTimer = null;
+  playerCardEl.classList.remove('selecting-player');
+}
+
+function resetBidControlsAfterSale(player) {
+  postSaleBasePrice = Number(player?.basePrice) || null;
+  setSelectedTeam(null);
+  document.getElementById('bidAmount').value = postSaleBasePrice ?? '';
+  bidAmountUserEdited = false;
+  updateKeyboardBidStatus();
+}
+
+function computeLeadingBid(bids) {
+  const valid = (bids || []).filter(b => b.isValid);
+  if (!valid.length) return null;
+  const top = valid.reduce((a, b) => (b.amount > a.amount ? b : a));
+  return { teamId: top.teamId, amount: top.amount };
+}
+
+function nextBidAmount() {
+  if (!currentPlayer || !currentAuction) return '';
+  const increment = currentAuction.bidIncrementAmount;
+  const floor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  return leadingBid ? leadingBid.amount + increment : floor;
+}
+
+function refreshLeaderUi() {
+  const banner = document.getElementById('leaderBanner');
+  if (leadingBid) {
+    banner.style.display = '';
+    document.getElementById('leaderTeamName').textContent = teamsById[leadingBid.teamId]?.name || ('Team ' + leadingBid.teamId);
+    document.getElementById('leaderAmount').textContent = fmtMoney(leadingBid.amount);
+    setSelectedTeam(leadingBid.teamId);
+  } else {
+    banner.style.display = 'none';
+  }
+  if (!bidAmountUserEdited) {
+    document.getElementById('bidAmount').value = nextBidAmount();
+  }
+  updateActivePlayerBidDetails();
+}
+
+async function refreshTeams() {
+  const [teams, players] = await Promise.all([
+    Api.get(`/api/auctions/${auctionId}/teams`),
+    Api.get(`/api/auctions/${auctionId}/players`)
+  ]);
+  teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
+  teamOrder = teams.map(t => t.id);
+  playersById = Object.fromEntries(players.map(p => [p.id, p]));
+  document.getElementById('teamSelect').innerHTML = '<option value="">Choose team...</option>' +
+    teams.map(t => `<option value="${t.id}">${t.name} (${fmtMoney(t.availableBalance)})</option>`).join('');
+
+  const rosterByTeam = {};
+  players.filter(p => (p.status === 'Sold' || p.isCaptain) && p.teamId).forEach(p => {
+    (rosterByTeam[p.teamId] ||= []).push(p);
+  });
+
+  const topSold = players.filter(p => p.status === 'Sold' && p.salePrice != null)
+    .sort((a, b) => b.salePrice - a.salePrice)
+    .slice(0, 5);
+  document.getElementById('topSoldList').innerHTML = topSold.length
+    ? topSold.map((p, i) => `
+        <div class="d-flex justify-content-between small py-1 border-bottom">
+          <span>#${i + 1} ${p.name} <span class="text-muted">(${teamsById[p.teamId]?.name || 'Team ' + p.teamId})</span></span>
+          <span class="text-success fw-bold">${fmtMoney(p.salePrice)}</span>
+        </div>`).join('')
+    : '<p class="text-muted small mb-0">None yet</p>';
+
+  const unsoldPlayers = players.filter(p => p.status === 'Unsold' || p.status === 'FinalUnsold');
+  const soldPlayers = players.filter(p => p.status === 'Sold');
+  const remainingPlayers = players.filter(p =>
+    p.status === 'Available' || p.status === 'ReauctionAvailable' || p.status === 'Selected' || p.status === 'Bidding');
+  document.getElementById('remainingCount').textContent = `${remainingPlayers.length} remaining`;
+  document.getElementById('soldCountBadge').textContent = `${soldPlayers.length} sold`;
+  document.getElementById('unsoldCountBadge').textContent = `${unsoldPlayers.length} unsold`;
+
+  document.getElementById('unsoldCount').textContent = unsoldPlayers.length;
+  document.getElementById('unsoldList').innerHTML = unsoldPlayers.length
+    ? unsoldPlayers.map(p => `
+        <div class="d-flex justify-content-between small py-1 border-bottom">
+          <span>${p.name} <span class="text-muted">(${p.role})</span></span>
+          <span class="badge ${p.status === 'FinalUnsold' ? 'badge-locked' : 'badge-unsold'}">${p.status === 'FinalUnsold' ? 'Final Unsold' : 'Unsold'}</span>
+        </div>`).join('')
+    : '<p class="text-muted small mb-0">None yet</p>';
+
+  // Players still eligible for the *next* spin: Available during the main round,
+  // ReauctionAvailable once the unsold pool is open - the pool the wheel actually draws from.
+  const poolStatus = (currentAuction?.status === 'UnsoldPoolOpen') ? 'ReauctionAvailable' : 'Available';
+  const reauctionPlayers = players.filter(p => p.status === poolStatus);
+  selectionPoolPlayers = reauctionPlayers;
+  document.getElementById('reauctionCount').textContent = reauctionPlayers.length;
+  document.getElementById('reauctionList').innerHTML = reauctionPlayers.length
+    ? reauctionPlayers.map(p => `
+        <div class="d-flex justify-content-between small py-1 border-bottom">
+          <span>${p.name} <span class="text-muted">(${p.role})</span></span>
+          <span class="text-muted">${fmtMoney(p.basePrice)}</span>
+        </div>`).join('')
+    : '<p class="text-muted small mb-0">None left - spin to select or check Unsold</p>';
+
+  document.getElementById('teamBoxes').innerHTML = teams.map((t, idx) => {
+    const roster = rosterByTeam[t.id] || [];
+    const color = t.teamColor || teamColor(idx);
+    const initials = t.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
+    const spentPct = t.openingBalance > 0 ? Math.min(100, Math.round((1 - t.availableBalance / t.openingBalance) * 100)) : 0;
+    const low = t.availableBalance < t.openingBalance * 0.1;
+    const rosterRows = roster.length
+      ? roster.map(p => `
+          <div class="d-flex justify-content-between small py-1 border-bottom">
+            <span><span class="team-roster-player-name">${p.name}</span> <span class="team-roster-player-skill">${p.isCaptain ? 'Captain · ' : ''}${p.role}</span></span>
+            ${p.isCaptain && !(p.captainCost > 0) ? '' : `<span class="text-success fw-semibold">${fmtMoney(p.isCaptain ? p.captainCost : p.salePrice)}</span>`}
+          </div>`).join('')
+      : '<div class="small py-1 text-muted">No players yet</div>';
+    return `
+      <div class="col-md-6 col-xl-4">
+        <div class="card team-box p-3 h-100" data-team-id="${t.id}" style="--team-color:${color}">
+          <div class="d-flex align-items-center gap-2 mb-2">
+            ${t.logoUrl ? `<img class="team-panel-logo" src="${t.logoUrl}" alt="${t.name} logo">` : `<div class="team-avatar" style="background:${color}">${initials}</div>`}
+            <div class="flex-grow-1">
+              <div class="fw-bold team-title">${t.name}</div>
+              <div class="small text-muted">${roster.length} player${roster.length === 1 ? '' : 's'}</div>
+            </div>
+            ${low ? '<span class="badge text-bg-danger">LOW</span>' : ''}
+          </div>
+          <div class="d-flex justify-content-between align-items-baseline mb-1">
+            <span class="team-balance-amount ${low ? 'balance-low' : 'balance-positive'}">${fmtMoney(t.availableBalance)}</span>
+            <span class="small text-muted">of ${fmtMoney(t.openingBalance)}</span>
+          </div>
+          <div class="progress team-spend-bar mb-2" style="height:6px;">
+            <div class="progress-bar" style="width:${spentPct}%; background:${color}"></div>
+          </div>
+          <div class="team-roster-scroll ${teams.length <= 3 ? 'no-roster-scroll' : ''}">${rosterRows}</div>
+        </div>
+      </div>`;
+  }).join('');
+
+  document.querySelectorAll('.team-box').forEach(box => {
+    box.addEventListener('click', () => {
+      if (box.dataset.justDropped === 'true') return;
+      const teamId = Number(box.dataset.teamId);
+      setSelectedTeam(teamId);
+      placeBidForTeam(teamId);
+    });
+    box.addEventListener('dragover', (e) => { e.preventDefault(); box.classList.add('drop-hover'); });
+    box.addEventListener('dragleave', () => box.classList.remove('drop-hover'));
+    box.addEventListener('drop', async (e) => {
+      e.preventDefault();
+      box.dataset.justDropped = 'true';
+      setTimeout(() => delete box.dataset.justDropped, 0);
+      box.classList.remove('drop-hover');
+      const playerId = Number(e.dataTransfer.getData('text/plain'));
+      const teamId = Number(box.dataset.teamId);
+      await handleDropSell(playerId, teamId);
+    });
+  });
+  if (selectedTeamId && teamsById[selectedTeamId]) setSelectedTeam(selectedTeamId);
+  else updateKeyboardBidStatus();
+}
+
+async function handleDropSell(playerId, teamId) {
+  if (!currentPlayer || currentPlayer.id !== playerId) { showAuctionNotice('That player is no longer the one selected.'); return; }
+  const team = teamsById[teamId];
+  // Preserve the operator's chosen amount, including keyboard arrow adjustments. Only fall
+  // back to the leader/next valid amount if the bid box is empty or invalid.
+  const selectedAmount = Number(document.getElementById('bidAmount').value);
+  const suggested = selectedAmount > 0
+    ? selectedAmount
+    : (leadingBid && leadingBid.teamId === teamId ? leadingBid.amount : nextBidAmount());
+  const input = await uiPrompt(`Sell ${currentPlayer.name} to ${team?.name}. Enter final price:`, suggested || currentPlayer.basePrice, { title: 'Confirm sale price' });
+  if (input === null) return; // cancelled — nothing changes, drag again if you dropped on the wrong box
+  const amount = Number(input);
+  if (!amount || amount <= 0) { showAuctionNotice('Enter a valid positive amount.'); return; }
+  try {
+    const res = await Api.post(`/api/auctions/${auctionId}/sell`, { playerId, teamId, amount });
+    lastSaleId = res.sale?.id ?? null;
+    lastSoldPlayerId = res.player?.id ?? playerId;
+    document.getElementById('undoBtn').disabled = !lastSaleId;
+    resetBidControlsAfterSale(res.player);
+    await refreshState();
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+async function undoLastSale() {
+  if (!lastSaleId) return;
+  const reason = 'Undo via live auction console'; // audit trail still requires a reason server-side, but no prompt for the operator
+  try {
+    await Api.post(`/api/auctions/${auctionId}/correction`, { type: 'reverse_sale', saleId: lastSaleId, reason });
+    // Reversal puts the player back to Available/ReauctionAvailable. Re-select it immediately
+    // so it reappears as the current player, ready to drag onto the correct team - instead of
+    // vanishing back into the pool until the next spin.
+    if (lastSoldPlayerId) {
+      try {
+        await Api.post(`/api/auctions/${auctionId}/select-player`, { playerId: lastSoldPlayerId });
+      } catch (e) {
+        showAuctionNotice(`Sale reversed, but couldn't re-select the player automatically: ${e.message}. Find them in the "In This Round" tab or Players page to select manually.`);
+      }
+    }
+    lastSaleId = null;
+    lastSoldPlayerId = null;
+    document.getElementById('undoBtn').disabled = true;
+    await refreshState();
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+function renderBidHistory(bids) {
+  leadingBid = computeLeadingBid(bids);
+  document.getElementById('undoBidBtn').disabled = !(bids || []).some(b => b.isValid);
+  const validBids = (bids || []).filter(b => b.isValid);
+  document.getElementById('bidHistory').innerHTML = validBids.map(b => `
+    <div class="timeline-item">
+      <strong>${teamsById[b.teamId]?.name || 'Team ' + b.teamId}</strong> bid ${fmtMoney(b.amount)}
+    </div>`).join('') || '<p class="text-muted">No bids yet</p>';
+  refreshLeaderUi();
+}
+
+function renderRecentSold(sales) {
+  document.getElementById('recentSold').innerHTML = (sales || []).map(s => `
+    <div class="d-flex justify-content-between border-bottom py-1">
+      <span>${playersById[s.playerId]?.name || 'Player #' + s.playerId} → ${teamsById[s.teamId]?.name || s.teamId}</span>
+      <span class="text-success fw-bold">${fmtMoney(s.finalAmount)}</span>
+    </div>`).join('') || '<p class="text-muted">None yet</p>';
+}
+
+function showAuctionNotice(message, type = 'error') {
+  return showUiNotice(message, type);
+}
+
+function clearAuctionNotices() {
+  clearUiNotices();
+}
+
+async function refreshState() {
+  const state = await Api.get(`/api/auctions/${auctionId}/state`);
+  currentAuction = state.auction;
+  document.getElementById('bidAmount').step = state.auction.bidIncrementAmount;
+  SoldEffects.configure({
+    animationEnabled: state.auction.rules?.soldAnimationEnabled !== false,
+    animationStyle: state.auction.rules?.soldAnimationStyle || 'Stamp',
+    soundEnabled: state.auction.rules?.soldSoundEnabled !== false,
+    drawSoundEnabled: state.auction.rules?.drawSoundEnabled !== false,
+    showSoundUnlock: false
+  });
+  document.getElementById('auctionName').textContent = state.auction.name;
+  const logoEl = document.getElementById('auctionLogo');
+  if (state.auction.logoDataUri) { logoEl.src = state.auction.logoDataUri; logoEl.classList.remove('d-none'); }
+  else { logoEl.classList.add('d-none'); }
+  document.getElementById('statusBadge').className = 'badge ' + statusBadgeClass(state.auction.status);
+  document.getElementById('statusBadge').textContent = humanizeStatus(state.auction.status);
+  document.getElementById('roundNum').textContent = state.auction.currentRound;
+  await refreshTeams(); // also populates the unsold-players list/count from the full player list
+  const playerChanged = !currentPlayer || !state.currentPlayer || currentPlayer.id !== state.currentPlayer.id;
+  if (playerChanged) {
+    bidAmountUserEdited = false;
+    clearAuctionNotices();
+  }
+  renderPlayerCard(state.currentPlayer);
+  renderBidHistory(state.recentBids);
+  if (state.currentPlayer) {
+    postSaleBasePrice = null;
+  } else if (postSaleBasePrice != null) {
+    setSelectedTeam(null);
+    document.getElementById('bidAmount').value = postSaleBasePrice;
+  }
+  renderRecentSold(state.recentSales);
+}
+
+function celebrateSale(payload) {
+  resetBidControlsAfterSale(payload?.player);
+  const teamId = payload?.sale?.teamId ?? payload?.player?.teamId;
+  const team = teamsById[teamId];
+  const colorIndex = Math.max(0, teamOrder.indexOf(teamId));
+  SoldEffects.celebrate({
+    saleId: payload?.sale?.id,
+    playerName: payload?.player?.name,
+    teamName: team?.name || `Team ${teamId}`,
+    amount: fmtMoney(payload?.sale?.finalAmount ?? payload?.player?.salePrice),
+    teamColor: team?.teamColor || teamColor(colorIndex)
+  });
+}
+
+async function callAction(action) {
+  try { await Api.post(`/api/auctions/${auctionId}/${action}`); await refreshState(); }
+  catch (err) { showAuctionNotice(err.message); }
+}
+
+async function spin() {
+  if (isSpinning) return;
+  if (currentPlayer) {
+    showAuctionNotice(`${currentPlayer.name} is already selected. Sell or mark them unsold before spinning again.`);
+    return;
+  }
+  isSpinning = true;
+  const spinButton = document.getElementById('spinBtn');
+  const spinLabel = spinButton.querySelector('strong');
+  const spinHint = spinButton.querySelector('small');
+  spinButton.disabled = true;
+  spinButton.classList.add('is-spinning');
+  spinLabel.textContent = 'Selecting...';
+  spinHint.textContent = 'Drawing from the player pool';
+  playerCardEl.classList.remove('player-reveal');
+  startSelectionMeter();
+  try {
+    const selectionStartedAt = performance.now();
+    const player = await Api.post(`/api/auctions/${auctionId}/spin`);
+    const remainingAnimationTime = Math.max(0, 2500 - (performance.now() - selectionStartedAt));
+    if (remainingAnimationTime) await new Promise(resolve => setTimeout(resolve, remainingAnimationTime));
+    stopSelectionMeter();
+    renderPlayerCard(player);
+    SoldEffects.playDrawReveal();
+    void playerCardEl.offsetWidth;
+    playerCardEl.classList.add('player-reveal');
+    setTimeout(() => playerCardEl.classList.remove('player-reveal'), 460);
+    renderBidHistory([]);
+  } catch (err) {
+    renderPlayerCard(null);
+    showAuctionNotice(err.message);
+  } finally {
+    isSpinning = false;
+    stopSelectionMeter();
+    spinButton.classList.remove('is-spinning');
+    spinButton.disabled = false;
+    spinLabel.textContent = 'Spin & Select';
+    spinHint.textContent = 'Draw the next player';
+  }
+}
+
+async function placeBid() {
+  if (bidInFlight) return;
+  if (!currentPlayer) { showAuctionNotice('No player selected'); return; }
+  const teamId = selectedTeamId || Number(document.getElementById('teamSelect').value);
+  if (!teamId) { showAuctionNotice('Select a team first with ↑/↓ or the team menu.'); return; }
+  const amount = Number(document.getElementById('bidAmount').value);
+  bidInFlight = true;
+  try {
+    await Api.post(`/api/auctions/${auctionId}/bids`, { playerId: currentPlayer.id, teamId, amount });
+    bidAmountUserEdited = false;
+    await refreshState();
+  } catch (err) {
+    showAuctionNotice(err.message);
+  } finally { bidInFlight = false; }
+}
+
+async function placeBidForTeam(teamId) {
+  if (bidInFlight) return;
+  if (!currentPlayer) { showAuctionNotice('Select a player before placing a bid.'); return; }
+
+  const amount = Number(nextBidAmount());
+  if (!amount) { showAuctionNotice('A valid next bid amount is not available.'); return; }
+
+  document.getElementById('teamSelect').value = teamId;
+  setSelectedTeam(teamId);
+  document.getElementById('bidAmount').value = amount;
+  bidInFlight = true;
+  try {
+    await Api.post(`/api/auctions/${auctionId}/bids`, { playerId: currentPlayer.id, teamId, amount });
+    bidAmountUserEdited = false;
+    await refreshState();
+  } catch (err) {
+    showAuctionNotice(err.message);
+  } finally { bidInFlight = false; }
+}
+
+async function undoLastBid() {
+  const button = document.getElementById('undoBidBtn');
+  button.disabled = true;
+  try {
+    await Api.post(`/api/auctions/${auctionId}/bids/undo-last`);
+    bidAmountUserEdited = false;
+    await refreshState();
+  } catch (err) {
+    showAuctionNotice(err.message);
+    await refreshState();
+  }
+}
+
+async function sellToLeader() {
+  if (!currentPlayer) { showAuctionNotice('No player selected'); return; }
+  if (!leadingBid) { showAuctionNotice('No valid bids yet — use "Sell selected team @ amount" for a no-bid override sale.'); return; }
+  const teamName = teamsById[leadingBid.teamId]?.name || ('Team ' + leadingBid.teamId);
+  if (!await uiConfirm(`Sell ${currentPlayer.name} to ${teamName} for ${fmtMoney(leadingBid.amount)}?`, { title: 'Confirm sale', okText: 'Sell' })) return;
+  try {
+    const res = await Api.post(`/api/auctions/${auctionId}/sell`, { playerId: currentPlayer.id, teamId: leadingBid.teamId, amount: leadingBid.amount });
+    lastSaleId = res.sale?.id ?? null;
+    lastSoldPlayerId = res.player?.id ?? currentPlayer.id;
+    document.getElementById('undoBtn').disabled = !lastSaleId;
+    resetBidControlsAfterSale(res.player);
+    await refreshState();
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+async function sellManual() {
+  if (!currentPlayer) { showAuctionNotice('No player selected'); return; }
+  const teamId = Number(document.getElementById('teamSelect').value);
+  const amount = Number(document.getElementById('bidAmount').value) || currentPlayer.basePrice;
+  if (!await uiConfirm(`Sell ${currentPlayer.name} to ${teamsById[teamId]?.name} for ${fmtMoney(amount)}?`, { title: 'Confirm sale', okText: 'Sell' })) return;
+  try {
+    const res = await Api.post(`/api/auctions/${auctionId}/sell`, { playerId: currentPlayer.id, teamId, amount });
+    lastSaleId = res.sale?.id ?? null;
+    lastSoldPlayerId = res.player?.id ?? currentPlayer.id;
+    document.getElementById('undoBtn').disabled = !lastSaleId;
+    resetBidControlsAfterSale(res.player);
+    await refreshState();
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+async function markUnsold() {
+  if (!currentPlayer) { showAuctionNotice('No player selected'); return; }
+  try {
+    await Api.post(`/api/auctions/${auctionId}/mark-unsold`, { playerId: currentPlayer.id });
+    await refreshState();
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+async function openUnsoldPool() {
+  const players = await Api.get(`/api/auctions/${auctionId}/players`);
+  const unsoldPlayers = players.filter(p => p.status === 'Unsold');
+  if (!unsoldPlayers.length) { showAuctionNotice('No unsold players to reopen right now.'); return; }
+
+  const names = unsoldPlayers.map(p => `${p.name} (${p.role})`).join(', ');
+  const ok = await uiConfirm(
+    `This will move ${unsoldPlayers.length} unsold player${unsoldPlayers.length === 1 ? '' : 's'} back into play for another round: ${names}. Continue?`,
+    { title: 'Open Unsold Pool', okText: 'Open Pool' }
+  );
+  if (!ok) return;
+
+  try { await Api.post(`/api/auctions/${auctionId}/open-unsold-pool`); await refreshState(); }
+  catch (err) { showAuctionNotice(err.message); }
+}
+
+async function completeAuction() {
+  const force = await uiConfirm('Force-complete even if unsold pool has unresolved players? Click OK for yes, Cancel to try a normal complete first.', { title: 'Complete auction' });
+  try {
+    await Api.post(`/api/auctions/${auctionId}/complete`, { forceConfirm: force });
+    await refreshState();
+    showAuctionNotice('Auction completed', 'success');
+  } catch (err) { showAuctionNotice(err.message); }
+}
+
+refreshState().catch(err => showAuctionNotice(err.message));
+
+createAuctionConnection(auctionId, {
+  auction_status_changed: () => refreshState(),
+  auction_settings_changed: () => refreshState(),
+  player_selected: () => { if (!isSpinning) refreshState(); },
+  bid_placed: () => refreshState(),
+  bid_rejected: () => refreshState(),
+  bid_undone: () => refreshState(),
+  player_sold: payload => { celebrateSale(payload); refreshState(); },
+  player_unsold: () => refreshState(),
+  balance_updated: () => refreshTeams(),
+  unsold_pool_opened: () => refreshState(),
+  auction_completed: () => refreshState(),
+  correction_applied: () => refreshState(),
+}, () => refreshState());
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

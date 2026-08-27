@@ -1,0 +1,740 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1" />
+<title>Auction Setup</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=sponsor-fit-1" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<div class="container">
+    <div class="position-relative text-center mb-3">
+        <a href="admin-dashboard.html" class="btn btn-outline-secondary btn-sm position-absolute top-0 end-0 setup-dashboard-link">← Back to Dashboard</a>
+        <img id="logoPreview" class="d-none rounded-circle mx-auto d-block mb-2" style="width:28px;height:28px;object-fit:cover;" alt="Auction logo">
+        <h2 id="pageTitle" class="mb-1">Auction Setup</h2>
+        <div id="statusBadge"></div>
+    </div>
+
+    <ul class="nav nav-tabs mb-3">
+        <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-basics">Basics</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-rules">Rules</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-tournament-draw">Tournament Draw</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-fixture-generator">Fixture Generator</a></li>
+        <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-lifecycle">Lifecycle</a></li>
+    </ul>
+
+    <div class="tab-content">
+        <div class="tab-pane fade show active" id="tab-basics">
+            <form id="basicsForm" class="card p-3">
+                <div class="row g-3">
+                    <div class="col-md-6"><label class="form-label small">Auction Name</label><input class="form-control" id="fName" required></div>
+                    <div class="col-md-3"><label class="form-label small">Sport Type</label><input class="form-control" id="fSport" value="Cricket"></div>
+                    <div class="col-md-3"><label class="form-label small">Tournament Name</label><input class="form-control" id="fTournament"></div>
+                    <div class="col-md-4"><label class="form-label small">Date/Time</label><input type="datetime-local" class="form-control" id="fDateTime"></div>
+                    <div class="col-md-4"><label class="form-label small">Venue / Online Label</label><input class="form-control" id="fVenue" value="Online"></div>
+                    <div class="col-md-4"><label class="form-label small">Currency Label</label><input class="form-control" id="fCurrency" value="Points"></div>
+                    <div class="col-md-3"><label class="form-label small">Default Team Balance</label><input type="number" class="form-control" id="fDefaultBalance" value="10000"></div>
+                    <div class="col-md-3"><label class="form-label small">Minimum Bid Amount</label><input type="number" class="form-control" id="fMinBid" value="100"></div>
+                    <div class="col-md-3"><label class="form-label small">Bid Increment</label><input type="number" class="form-control" id="fIncrement" value="50"></div>
+                    <div class="col-md-3"><label class="form-label small">Visibility</label>
+                        <select class="form-select" id="fVisibility">
+                            <option value="Private">Private</option>
+                            <option value="PublicViewOnly">Public View Only</option>
+                            <option value="TeamLoginOnly">Team Login Only</option>
+                        </select>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">Roster Min Size</label><input type="number" class="form-control" id="fRosterMin" value="5"></div>
+                    <div class="col-md-4"><label class="form-label small">Roster Max Size</label><input type="number" class="form-control" id="fRosterMax" value="15"></div>
+                    <div class="col-md-4"><label class="form-label small">Bidding Mode</label>
+                        <select class="form-select" id="fBiddingMode">
+                            <option value="AdminControlled">Admin Controlled</option>
+                            <option value="TeamOwnerLive">Team Owner Live</option>
+                            <option value="Hybrid">Hybrid</option>
+                        </select>
+                    </div>
+                </div>
+                <button class="btn btn-primary mt-3" type="submit">Save Basics</button>
+            </form>
+
+            <div class="card p-3 mt-3">
+                <h6>Auction Logo</h6>
+                <p class="text-muted small mb-2">Shown next to the auction name and large/centered on the public display page. Max 500KB.</p>
+                <div class="d-flex align-items-center gap-3">
+                    <img id="logoBigPreview" class="d-none rounded border" style="width:80px;height:80px;object-fit:cover;" alt="Logo preview">
+                    <input type="file" class="form-control" id="logoFile" accept="image/*" style="max-width:320px;">
+                    <button class="btn btn-outline-secondary" id="removeLogoBtn" type="button">Remove</button>
+                </div>
+            </div>
+
+            <div class="card p-3 mt-3">
+                <h6>Sponsors</h6>
+                <p class="text-muted small mb-2">Shown as a logo strip on the public display page. Add as many as you like. Max 500KB each.</p>
+                <div class="d-flex align-items-center gap-2 mb-3">
+                    <input class="form-control" id="sponsorName" placeholder="Sponsor name (optional)" style="max-width:220px;">
+                    <input type="file" class="form-control" id="sponsorFile" accept="image/*" style="max-width:320px;">
+                </div>
+                <div id="sponsorList" class="d-flex flex-wrap gap-3"></div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-rules">
+            <form id="rulesForm" class="card p-3">
+                <div class="row g-3">
+                    <div class="col-md-4 form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="fUnsoldEnabled" checked>
+                        <label class="form-check-label">Unsold Rounds Enabled</label>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">Max Unsold Rounds</label><input type="number" class="form-control" id="fMaxUnsoldRounds" value="2"></div>
+                    <div class="col-md-4 form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="fReducedBase" checked>
+                        <label class="form-check-label">Allow Reduced Base Price In Unsold</label>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">Custom Unsold Min Bid</label><input type="number" class="form-control" id="fCustomUnsoldMinBid"></div>
+                    <div class="col-md-4 form-check form-switch mt-4">
+                        <input class="form-check-input" type="checkbox" id="fWheelPool" checked>
+                        <label class="form-check-label">Allow Wheel Selection From Pool</label>
+                    </div>
+                    <div class="col-md-4"><label class="form-label small">Min Remaining Purse Rule</label><input type="number" class="form-control" id="fMinPurse"></div>
+                </div>
+                <div class="alert alert-warning mt-3 d-none" id="rulesLockedNotice">
+                    Rules are locked once the auction goes Live. Use the correction workflow for further changes.
+                </div>
+                <button class="btn btn-primary mt-3" type="submit">Save Rules</button>
+            </form>
+            <form id="soldEffectsForm" class="card p-3 mt-3">
+                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-2">
+                    <div>
+                        <h6 class="mb-1">Presentation Settings</h6>
+                        <div class="text-muted small">Sold effects and public-display sections can be changed while the auction is live.</div>
+                    </div>
+                    <button class="btn btn-outline-primary" type="submit">Save Presentation</button>
+                </div>
+                <div class="row g-3">
+                    <div class="col-md-6 form-check form-switch mt-3 ps-5">
+                        <input class="form-check-input" type="checkbox" id="fSoldAnimation" checked>
+                        <label class="form-check-label" for="fSoldAnimation">Show Sold Celebration</label>
+                        <div class="form-text">Displays the animated SOLD stamp on live screens.</div>
+                    </div>
+                    <div class="col-md-6 mt-3">
+                        <label class="form-label" for="fSoldAnimationStyle">Sold celebration style</label>
+                        <select class="form-select" id="fSoldAnimationStyle">
+                            <option value="Stamp">SOLD Stamp</option>
+                            <option value="Hammer">Auction Hammer</option>
+                        </select>
+                    </div>
+                    <div class="col-md-6 form-check form-switch mt-3 ps-5">
+                        <input class="form-check-input" type="checkbox" id="fSoldSound" checked>
+                        <label class="form-check-label" for="fSoldSound">Play Sold Sound</label>
+                        <div class="form-text">Plays a short gavel sound when a sale completes.</div>
+                    </div>
+                    <div class="col-md-6 form-check form-switch mt-3 ps-5">
+                        <input class="form-check-input" type="checkbox" id="fDrawSound" checked>
+                        <label class="form-check-label" for="fDrawSound">Play Player Draw Sound</label>
+                        <div class="form-text">Plays gentle meter pulses and a reveal chime when a player is selected.</div>
+                    </div>
+                    <div class="col-md-6 form-check form-switch mt-3 ps-5">
+                        <input class="form-check-input" type="checkbox" id="fPublicLivePanel">
+                        <label class="form-check-label" for="fPublicLivePanel">Show Public Live Bid Panel</label>
+                        <div class="form-text">Shows the LIVE PLAYER AUCTION label and On the Block / Current Bid section on the public display.</div>
+                    </div>
+                </div>
+            </form>
+        </div>
+
+        <div class="tab-pane fade" id="tab-tournament-draw">
+            <div class="draw-shell">
+                <div class="row g-2 align-items-stretch">
+                    <div class="col-12 col-xl-6">
+                        <div class="card border-0 shadow-sm draw-stage h-100 p-3 p-lg-4">
+                            <div class="draw-toolbar d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                <span class="draw-step-badge" id="drawSetupCount">0 teams</span>
+                                <div class="d-flex gap-2">
+                                    <button class="btn btn-sm btn-success" type="button" id="drawLockBtn">Lock Team Assignments</button>
+                                    <button class="btn btn-sm btn-outline-primary" type="button" id="drawGenerateBtn">Refresh Teams</button>
+                                    <a class="btn btn-sm btn-outline-secondary" id="drawManageTeamsLink" href="#">Manage Teams</a>
+                                </div>
+                            </div>
+                            <div class="text-center mb-2">
+                                <div class="draw-kicker">NOW DRAWING</div>
+                                <h3 id="drawCurrentTeam" class="draw-current-team mb-1">Team A</h3>
+                                <p id="drawStatus" class="text-muted mb-0">Auction teams load into the wheel automatically.</p>
+                            </div>
+                            <div class="draw-wheel-wrap mx-auto">
+                                <canvas id="tournamentWheel" aria-label="Tournament draw wheel"></canvas>
+                                <div class="draw-pointer" aria-hidden="true"></div>
+                            </div>
+                            <div id="drawLatestResult" class="draw-latest-result d-none" role="status"></div>
+                            <div class="d-flex flex-wrap justify-content-center gap-2 mt-3">
+                                <button class="btn btn-lg btn-success px-5" type="button" id="drawSpinBtn" disabled>Spin</button>
+                                <button class="btn btn-outline-primary" type="button" id="drawNewBtn">New Draw</button>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="col-12 col-xl-6">
+                        <div class="card border-0 shadow-sm draw-fixture-panel h-100 p-3">
+                            <div class="d-flex flex-wrap justify-content-between align-items-start gap-2 mb-3">
+                                <div>
+                                    <div class="draw-kicker">LIVE FIXTURE NAMES</div>
+                                    <h4 class="mb-0">Tournament Fixtures</h4>
+                                    <p class="text-muted small mb-0">Team slots update with every wheel result.</p>
+                                </div>
+                                <span class="badge bg-primary" id="drawFixtureProgress">0 / 0 teams assigned</span>
+                            </div>
+                            <div id="drawFixtureEmpty" class="draw-fixture-empty text-center text-muted">
+                                No fixtures generated yet. <a href="#tab-fixture-generator" data-bs-toggle="tab">Open Fixture Generator</a>
+                            </div>
+                            <div id="drawFixtureTableWrap" class="table-responsive fixture-table-wrap draw-fixture-table d-none">
+                                <table class="table table-sm align-middle mb-0">
+                                    <thead><tr><th>Date</th><th>Day</th><th>Time</th><th>Stage</th><th>Match</th></tr></thead>
+                                    <tbody id="drawFixtureTableBody"></tbody>
+                                </table>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <div class="card border-0 shadow-sm mt-4 p-3 p-lg-4">
+                    <div class="d-flex justify-content-between align-items-center mb-3">
+                        <div>
+                            <div class="draw-kicker">LIVE RESULTS</div>
+                            <h4 class="mb-0">Team Assignments</h4>
+                        </div>
+                        <span class="badge bg-primary" id="drawProgress">0 / 0 drawn</span>
+                    </div>
+                    <div class="table-responsive">
+                        <table class="table align-middle mb-0">
+                            <thead><tr><th>Draw order</th><th>Team slot</th><th>Assigned team / captain</th><th>Status</th></tr></thead>
+                            <tbody id="drawResultsBody"><tr><td colspan="4" class="text-center text-muted py-4">No results yet</td></tr></tbody>
+                        </table>
+                    </div>
+                </div>
+
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-fixture-generator">
+            <div class="fixture-shell">
+                <div class="fixture-hero mb-4">
+                    <div>
+                        <div class="fixture-kicker">TOURNAMENT SCHEDULER</div>
+                        <h3 class="mb-1">Fixture Generator</h3>
+                        <p class="mb-0">Build a balanced league schedule now. Wagon-wheel results will replace Team A, Team B, and the other slots automatically.</p>
+                    </div>
+                    <div class="fixture-team-count"><strong id="fixtureTeamCount">0</strong><span>teams</span></div>
+                </div>
+
+                <div class="row g-4">
+                    <div class="col-xl-4">
+                        <form id="fixtureForm" class="card border-0 shadow-sm p-3 p-lg-4">
+                            <h5 class="mb-3">League setup</h5>
+                            <div class="mb-3">
+                                <label class="form-label" for="fixtureTeams">Number of teams</label>
+                                <input class="form-control" id="fixtureTeams" type="number" min="2" required>
+                                <div class="form-text">Defaults to this auction's team setup, but can be changed for this fixture list.</div>
+                            </div>
+                            <div class="row g-3">
+                                <div class="col-sm-6 col-xl-12">
+                                    <label class="form-label" for="fixtureMatchesPerTeam">League matches per team</label>
+                                    <input class="form-control" id="fixtureMatchesPerTeam" type="number" min="1" required>
+                                </div>
+                                <div class="col-sm-6 col-xl-12">
+                                    <label class="form-label" for="fixtureDays">Number of days</label>
+                                    <input class="form-control" id="fixtureDays" type="number" min="1" required>
+                                </div>
+                                <div class="col-sm-6 col-xl-12">
+                                    <label class="form-label" for="fixtureStartDate">League start date</label>
+                                    <input class="form-control" id="fixtureStartDate" type="date" required>
+                                    <div class="form-text">League days are scheduled on consecutive dates from here.</div>
+                                </div>
+                                <div class="col-sm-6 col-xl-12">
+                                    <label class="form-label" for="fixtureSlotsPerDay">Matches / time slots per day</label>
+                                    <input class="form-control" id="fixtureSlotsPerDay" type="number" min="1" required>
+                                </div>
+                            </div>
+
+                            <div class="mt-3">
+                                <label class="form-label mb-2">Match times</label>
+                                <div id="fixtureMatchTimes" class="fixture-match-times"></div>
+                                <div class="form-text">Start and end times are reused for each tournament day.</div>
+                            </div>
+
+                            <div class="form-check form-switch mt-4 mb-3">
+                                <input class="form-check-input" id="fixtureIncludeBreak" type="checkbox">
+                                <label class="form-check-label fw-semibold" for="fixtureIncludeBreak">Enable break / lunch</label>
+                            </div>
+                            <div id="fixtureBreakSettings" class="fixture-optional">
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureBreakStart">Break / lunch from</label>
+                                        <input class="form-control" id="fixtureBreakStart" type="time">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureBreakEnd">To</label>
+                                        <input class="form-control" id="fixtureBreakEnd" type="time">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div class="my-4">
+                                <label class="form-label" for="fixtureKnockoutFormat">Knockout format</label>
+                                <select class="form-select" id="fixtureKnockoutFormat">
+                                    <option value="none">No playoff — direct final</option>
+                                    <option value="semifinals">Two semifinals</option>
+                                    <option value="eliminator">Eliminator</option>
+                                </select>
+                            </div>
+                            <div id="fixtureSemiSettings" class="fixture-optional d-none">
+                                <label class="form-label">Semifinal seed matchups</label>
+                                <div class="fixture-seed-matchup mb-2">
+                                    <span>Semifinal 1</span>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureSemiOneA" aria-label="Semifinal 1 first seed" type="number" min="1"></div>
+                                    <strong>vs</strong>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureSemiOneB" aria-label="Semifinal 1 second seed" type="number" min="1"></div>
+                                </div>
+                                <div class="fixture-seed-matchup mb-3">
+                                    <span>Semifinal 2</span>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureSemiTwoA" aria-label="Semifinal 2 first seed" type="number" min="1"></div>
+                                    <strong>vs</strong>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureSemiTwoB" aria-label="Semifinal 2 second seed" type="number" min="1"></div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="fixtureSemiDate">Semifinal date</label>
+                                    <input class="form-control" id="fixtureSemiDate" type="date">
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureSemiOneTime">Semifinal 1 from</label>
+                                        <input class="form-control" id="fixtureSemiOneTime" type="time">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureSemiOneEnd">To</label>
+                                        <input class="form-control" id="fixtureSemiOneEnd" type="time">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureSemiTwoTime">Semifinal 2 from</label>
+                                        <input class="form-control" id="fixtureSemiTwoTime" type="time">
+                                    </div>
+                                    <div class="col-6">
+                                        <label class="form-label" for="fixtureSemiTwoEnd">To</label>
+                                        <input class="form-control" id="fixtureSemiTwoEnd" type="time">
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div id="fixtureEliminatorSettings" class="fixture-optional d-none">
+                                <label class="form-label">Eliminator seed matchup</label>
+                                <div class="fixture-seed-matchup mb-3">
+                                    <span>Eliminator</span>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureEliminatorA" aria-label="Eliminator first seed" type="number" min="1"></div>
+                                    <strong>vs</strong>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureEliminatorB" aria-label="Eliminator second seed" type="number" min="1"></div>
+                                </div>
+                                <div class="mb-3">
+                                    <label class="form-label" for="fixtureEliminatorDate">Eliminator date</label>
+                                    <input class="form-control" id="fixtureEliminatorDate" type="date">
+                                </div>
+                                <div class="row g-3">
+                                    <div class="col-6"><label class="form-label" for="fixtureEliminatorStart">From</label><input class="form-control" id="fixtureEliminatorStart" type="time"></div>
+                                    <div class="col-6"><label class="form-label" for="fixtureEliminatorEnd">To</label><input class="form-control" id="fixtureEliminatorEnd" type="time"></div>
+                                </div>
+                            </div>
+
+                            <div class="fixture-optional mb-4">
+                                <h6 class="mb-3">Final</h6>
+                                <div id="fixtureDirectFinalSeeds" class="fixture-seed-matchup mb-3">
+                                    <span>Final</span>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureFinalA" aria-label="Final first seed" type="number" min="1"></div>
+                                    <strong>vs</strong>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureFinalB" aria-label="Final second seed" type="number" min="1"></div>
+                                </div>
+                                <div id="fixtureEliminatorFinalSeeds" class="fixture-seed-matchup mb-3 d-none">
+                                    <span>Final</span>
+                                    <div><span>Seed</span><input class="form-control" id="fixtureFinalSeed" aria-label="Final seeded team" type="number" min="1"></div>
+                                    <strong>vs</strong><span>Eliminator winner</span>
+                                </div>
+                                <div id="fixtureSemiFinalLabel" class="small fw-semibold text-muted mb-3 d-none">Semifinal 1 winner vs Semifinal 2 winner</div>
+                                <div class="mb-3"><label class="form-label" for="fixtureFinalDate">Final date</label><input class="form-control" id="fixtureFinalDate" type="date" required></div>
+                                <div class="row g-3">
+                                    <div class="col-6"><label class="form-label" for="fixtureFinalStart">From</label><input class="form-control" id="fixtureFinalStart" type="time" required></div>
+                                    <div class="col-6"><label class="form-label" for="fixtureFinalEnd">To</label><input class="form-control" id="fixtureFinalEnd" type="time" required></div>
+                                </div>
+                            </div>
+                            <div class="d-grid gap-2">
+                                <button class="btn btn-primary btn-lg" type="submit">Generate Fixtures</button>
+                                <button class="btn btn-outline-secondary" id="fixtureResetBtn" type="button">Reset Generator</button>
+                            </div>
+                        </form>
+                    </div>
+
+                    <div class="col-xl-8">
+                        <div id="fixtureEmpty" class="card border-0 shadow-sm fixture-empty">
+                            <div class="fixture-empty-icon" aria-hidden="true">⌁</div>
+                            <h4>Ready to create the schedule</h4>
+                            <p class="text-muted mb-0">Choose the league settings, then generate a fixture list designed to spread opponents, rest, and time slots fairly.</p>
+                        </div>
+                        <div id="fixtureResults" class="d-none">
+                            <div class="card border-0 shadow-sm p-3 p-lg-4 mb-4">
+                                <div class="d-flex flex-wrap justify-content-between align-items-center gap-2 mb-3">
+                                    <div>
+                                        <div class="fixture-kicker">GENERATED SCHEDULE</div>
+                                        <h4 class="mb-0">Fixtures</h4>
+                                    </div>
+                                    <button class="btn btn-success" id="fixtureLockBtn" type="button">Lock Fixtures</button>
+                                </div>
+                                <div class="table-responsive fixture-table-wrap">
+                                    <table class="table align-middle mb-0">
+                                        <thead><tr><th>Date</th><th>Day</th><th>Time</th><th>Stage</th><th>Match</th></tr></thead>
+                                        <tbody id="fixtureTableBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+
+                            <div class="card border-0 shadow-sm p-3 p-lg-4">
+                                <div class="fixture-kicker">SCHEDULE HEALTH</div>
+                                <h4 class="mb-3">Fairness Report</h4>
+                                <div id="fixtureSummary" class="fixture-summary-grid mb-4"></div>
+                                <div id="fixtureWarnings" class="mb-3"></div>
+                                <div class="table-responsive">
+                                    <table class="table align-middle mb-0">
+                                        <thead><tr><th>Team</th><th>Matches</th><th>Opponents</th><th>Repeats</th><th>Minimum rest</th><th>Early / late</th><th>Busiest day</th></tr></thead>
+                                        <tbody id="fixtureFairnessBody"></tbody>
+                                    </table>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        </div>
+
+        <div class="tab-pane fade" id="tab-lifecycle">
+            <div class="card p-3">
+                <p>Current status: <span id="lifecycleStatus" class="badge badge-default"></span></p>
+                <div class="btn-group flex-wrap">
+                    <button class="btn btn-outline-secondary" onclick="transition('ready')">Mark Ready</button>
+                    <button class="btn btn-success" onclick="transition('start')">Start Live</button>
+                    <button class="btn btn-warning" onclick="transition('pause')">Pause</button>
+                    <button class="btn btn-primary" onclick="transition('resume')">Resume</button>
+                    <button class="btn btn-dark" onclick="completeAuction()">Complete</button>
+                    <button class="btn btn-secondary" onclick="transition('archive')">Archive</button>
+                    <button class="btn btn-outline-warning" id="reopenBtn" onclick="reopenAuction()" style="display:none">↩ Reopen Auction</button>
+                </div>
+                <div class="mt-3">
+                    <a class="btn btn-purple text-white" style="background:#6f42c1" id="goLiveLink" href="#">Go to Live Auction Console →</a>
+                </div>
+                <hr>
+                <div class="card bg-light border-0 p-3 mb-3">
+                    <h5 class="mb-2">Tournament planning locks</h5>
+                    <p class="text-muted small">Locked fixtures and team assignments cannot be changed anywhere else. Unlock them here when edits are needed.</p>
+                    <div class="d-flex flex-wrap gap-3">
+                        <div><span id="drawLockStatus" class="badge bg-secondary">Team assignments: Unlocked</span> <button id="unlockDrawBtn" class="btn btn-sm btn-outline-primary" onclick="unlockPlanning('draw')" disabled>Unlock Team Assignments</button></div>
+                        <div><span id="fixtureLockStatus" class="badge bg-secondary">Fixtures: Unlocked</span> <button id="unlockFixturesBtn" class="btn btn-sm btn-outline-primary" onclick="unlockPlanning('fixtures')" disabled>Unlock Fixtures</button></div>
+                    </div>
+                </div>
+                <div class="alert alert-danger">
+                    <strong>Reset Auction</strong> — wipes all bids, sales, and ledger history; every player goes back
+                    to Available and every team back to its opening balance; the auction returns to Draft.
+                    This cannot be undone. Use this to restart a test/demo auction, not to fix a single mistake
+                    (use the correction workflow on the live console for that instead).
+                    <div class="mt-2">
+                        <button class="btn btn-outline-danger" onclick="resetAuction()">⚠ Reset Auction to Draft</button>
+                    </div>
+                </div>
+                <div class="alert alert-danger mb-0">
+                    <strong>Delete Auction</strong> &mdash; permanently removes this auction and all of its teams,
+                    players, bids, sales, balances, sponsors, reports, and audit history. This cannot be undone.
+                    Active auctions must be completed or archived first.
+                    <div class="mt-2">
+                        <button class="btn btn-danger" onclick="deleteAuction()">Delete Auction Permanently</button>
+                    </div>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/nav.js?v=users-access-1"></script>
+<script src="js/ui.js?v=notices-2"></script>
+<script src="js/tournament-draw.js?v=planning-locks-1"></script>
+<script src="js/fixture-generator.js?v=planning-locks-1"></script>
+<script>
+if (requireAuth(['SuperAdmin','AuctionAdmin'])) {
+    renderNavbar('auction-setup.html');
+}
+const params = new URLSearchParams(location.search);
+const auctionId = params.get('id') || params.get('auctionId');
+if (!auctionId) { document.body.innerHTML = '<div class="container mt-5"><p>No auctionId given. <a href="admin-dashboard.html">Back to dashboard</a></p></div>'; }
+TournamentDraw.init(auctionId);
+FixtureGenerator.init(auctionId);
+
+let auction = null;
+
+async function load() {
+    auction = await Api.get(`/api/auctions/${auctionId}`);
+    TournamentDraw.setAuctionName(auction.name);
+    document.getElementById('pageTitle').textContent = `Auction Setup — ${auction.name}`;
+    document.getElementById('statusBadge').innerHTML = `<span class="badge ${statusBadgeClass(auction.status)}">${humanizeStatus(auction.status)}</span>`;
+    updateLogoPreviews(auction.logoDataUri);
+    document.getElementById('lifecycleStatus').textContent = humanizeStatus(auction.status);
+    document.getElementById('lifecycleStatus').className = `badge ${statusBadgeClass(auction.status)}`;
+    document.getElementById('goLiveLink').href = `live-auction.html?id=${auctionId}`;
+    document.getElementById('reopenBtn').style.display = auction.status === 'Completed' ? '' : 'none';
+    await loadPlanningLocks();
+
+    document.getElementById('fName').value = auction.name;
+    document.getElementById('fSport').value = auction.sportType;
+    document.getElementById('fTournament').value = auction.tournamentName;
+    document.getElementById('fDateTime').value = auction.dateTime ? auction.dateTime.substring(0,16) : '';
+    document.getElementById('fVenue').value = auction.venueOrOnlineLabel;
+    document.getElementById('fCurrency').value = auction.currencyLabel;
+    document.getElementById('fDefaultBalance').value = auction.defaultTeamBalance;
+    document.getElementById('fMinBid').value = auction.minimumBidAmount;
+    document.getElementById('fIncrement').value = auction.bidIncrementAmount;
+    document.getElementById('fVisibility').value = auction.visibility;
+    document.getElementById('fRosterMin').value = auction.rosterMinSize ?? 5;
+    document.getElementById('fRosterMax').value = auction.rosterMaxSize ?? 15;
+    document.getElementById('fBiddingMode').value = auction.biddingMode;
+
+    if (auction.rules) {
+        document.getElementById('fUnsoldEnabled').checked = auction.rules.unsoldRoundsEnabled;
+        document.getElementById('fMaxUnsoldRounds').value = auction.rules.maxUnsoldRounds;
+        document.getElementById('fReducedBase').checked = auction.rules.allowReducedBasePriceInUnsold;
+        document.getElementById('fCustomUnsoldMinBid').value = auction.rules.customUnsoldMinBid ?? '';
+        document.getElementById('fWheelPool').checked = auction.rules.allowWheelSelectionFromPool;
+        document.getElementById('fMinPurse').value = auction.rules.minRemainingPurseRule ?? '';
+        document.getElementById('fSoldAnimation').checked = auction.rules.soldAnimationEnabled !== false;
+        document.getElementById('fSoldAnimationStyle').value = auction.rules.soldAnimationStyle || 'Stamp';
+        document.getElementById('fSoldSound').checked = auction.rules.soldSoundEnabled !== false;
+        document.getElementById('fDrawSound').checked = auction.rules.drawSoundEnabled !== false;
+        document.getElementById('fPublicLivePanel').checked = auction.rules.publicLivePanelEnabled === true;
+    }
+
+    const locked = !(auction.status === 'Draft' || auction.status === 'Ready');
+    document.getElementById('rulesLockedNotice').classList.toggle('d-none', !locked);
+    document.getElementById('rulesForm').querySelectorAll('input').forEach(i => i.disabled = locked);
+}
+
+async function loadPlanningLocks() {
+    try {
+        const locks = await Api.get(`/api/auctions/${auctionId}/planning/locks`);
+        document.getElementById('drawLockStatus').textContent = `Team assignments: ${locks.drawLocked ? 'Locked' : 'Unlocked'}`;
+        document.getElementById('drawLockStatus').className = `badge ${locks.drawLocked ? 'bg-success' : 'bg-secondary'}`;
+        document.getElementById('fixtureLockStatus').textContent = `Fixtures: ${locks.fixturesLocked ? 'Locked' : 'Unlocked'}`;
+        document.getElementById('fixtureLockStatus').className = `badge ${locks.fixturesLocked ? 'bg-success' : 'bg-secondary'}`;
+        document.getElementById('unlockDrawBtn').disabled = !locks.drawLocked;
+        document.getElementById('unlockFixturesBtn').disabled = !locks.fixturesLocked;
+        TournamentDraw.setLocked(locks.drawLocked);
+        FixtureGenerator.setLocked(locks.fixturesLocked);
+    } catch (error) {
+        console.error('Unable to load planning locks', error);
+    }
+}
+
+async function unlockPlanning(kind) {
+    const label = kind === 'draw' ? 'team assignments' : 'fixtures';
+    if (!await uiConfirm(`Unlock ${label} so they can be changed again?`, { title: `Unlock ${label}`, okText: 'Unlock' })) return;
+    try {
+        await Api.post(`/api/auctions/${auctionId}/planning/${kind}/unlock`);
+        await loadPlanningLocks();
+        showUiNotice(`${kind === 'draw' ? 'Team assignments' : 'Fixtures'} unlocked.`, 'success');
+    } catch (error) {
+        showUiNotice(error.message, 'error');
+    }
+}
+
+window.addEventListener('planning-locks-updated', loadPlanningLocks);
+load();
+
+document.getElementById('basicsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await Api.patch(`/api/auctions/${auctionId}`, {
+            name: document.getElementById('fName').value,
+            sportType: document.getElementById('fSport').value,
+            tournamentName: document.getElementById('fTournament').value,
+            dateTime: document.getElementById('fDateTime').value ? new Date(document.getElementById('fDateTime').value).toISOString() : null,
+            venueOrOnlineLabel: document.getElementById('fVenue').value,
+            currencyLabel: document.getElementById('fCurrency').value,
+            defaultTeamBalance: parseFloat(document.getElementById('fDefaultBalance').value),
+            minimumBidAmount: parseFloat(document.getElementById('fMinBid').value),
+            bidIncrementAmount: parseFloat(document.getElementById('fIncrement').value),
+            rosterMinSize: parseInt(document.getElementById('fRosterMin').value),
+            rosterMaxSize: parseInt(document.getElementById('fRosterMax').value),
+            visibility: document.getElementById('fVisibility').value,
+            biddingMode: document.getElementById('fBiddingMode').value
+        });
+        alert('Saved');
+        load();
+    } catch (err) {
+        if (err.status === 409) alert('Some fields are locked: ' + err.message);
+        else alert(err.message);
+    }
+});
+
+document.getElementById('rulesForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await Api.patch(`/api/auctions/${auctionId}`, {
+            minimumBidAmount: parseFloat(document.getElementById('fMinBid').value),
+            bidIncrementAmount: parseFloat(document.getElementById('fIncrement').value),
+            rosterMinSize: parseInt(document.getElementById('fRosterMin').value),
+            rosterMaxSize: parseInt(document.getElementById('fRosterMax').value),
+            unsoldRoundsEnabled: document.getElementById('fUnsoldEnabled').checked,
+            maxUnsoldRounds: parseInt(document.getElementById('fMaxUnsoldRounds').value),
+            allowReducedBasePriceInUnsold: document.getElementById('fReducedBase').checked,
+            customUnsoldMinBid: document.getElementById('fCustomUnsoldMinBid').value ? parseFloat(document.getElementById('fCustomUnsoldMinBid').value) : null,
+            allowWheelSelectionFromPool: document.getElementById('fWheelPool').checked,
+            minRemainingPurseRule: document.getElementById('fMinPurse').value ? parseFloat(document.getElementById('fMinPurse').value) : null
+        });
+        alert('Saved');
+        load();
+    } catch (err) {
+        if (err.status === 409) alert('Rules are locked: ' + err.message);
+        else alert(err.message);
+    }
+});
+
+document.getElementById('soldEffectsForm').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    try {
+        await Api.patch(`/api/auctions/${auctionId}`, {
+            soldAnimationEnabled: document.getElementById('fSoldAnimation').checked,
+            soldAnimationStyle: document.getElementById('fSoldAnimationStyle').value,
+            soldSoundEnabled: document.getElementById('fSoldSound').checked,
+            drawSoundEnabled: document.getElementById('fDrawSound').checked,
+            publicLivePanelEnabled: document.getElementById('fPublicLivePanel').checked
+        });
+        showUiNotice('Presentation settings saved.', 'success');
+        load();
+    } catch (err) {
+        showUiNotice(err.message, 'error');
+    }
+});
+
+async function transition(action) {
+    try {
+        await Api.post(`/api/auctions/${auctionId}/${action}`);
+        load();
+    } catch (err) { alert(err.message); }
+}
+
+async function completeAuction() {
+    try {
+        await Api.post(`/api/auctions/${auctionId}/complete`, { forceConfirm: false });
+        load();
+    } catch (err) {
+        if (await uiConfirm(err.message + '\n\nForce-complete anyway?', { danger: true, okText: 'Force Complete' })) {
+            await Api.post(`/api/auctions/${auctionId}/complete`, { forceConfirm: true });
+            load();
+        }
+    }
+}
+
+async function reopenAuction() {
+    const reason = await uiPrompt(
+        'Reopen this Completed auction back into the unsold pool round? Any player still marked Available (leftover from the main round) will be moved into the reauction pool so they\'re reachable again. Enter a reason:',
+        'Completed too early with unresolved players', { title: 'Reopen auction' });
+    if (!reason) return;
+    try {
+        await Api.post(`/api/auctions/${auctionId}/reopen`, { reason });
+        alert('Auction reopened.');
+        load();
+    } catch (err) { alert(err.message); }
+}
+
+async function resetAuction() {
+    if (!await uiConfirm(`This permanently deletes all bids, sales, and ledger history for "${auction?.name}" and rewinds it to Draft. This cannot be undone. Continue?`, { danger: true, title: 'Reset auction?', okText: 'Continue' })) return;
+    if (!await uiConfirm('Are you absolutely sure? This is your last chance to cancel.', { danger: true, title: 'Confirm reset', okText: 'Yes, reset it' })) return;
+    try {
+        await Api.post(`/api/auctions/${auctionId}/reset`);
+        alert('Auction reset to Draft.');
+        load();
+    } catch (err) { alert(err.message); }
+}
+
+async function deleteAuction() {
+    const confirmed = await uiConfirm(
+        `Permanently delete "${auction?.name}" and all related data? This cannot be undone.`,
+        { danger: true, title: 'Delete auction?', okText: 'Delete permanently' }
+    );
+    if (!confirmed) return;
+
+    try {
+        await Api.del(`/api/auctions/${auctionId}`);
+        location.href = 'admin-dashboard.html';
+    } catch (err) { alert(err.message); }
+}
+
+function updateLogoPreviews(logoDataUri) {
+    ['logoPreview', 'logoBigPreview'].forEach(id => {
+        const img = document.getElementById(id);
+        if (logoDataUri) { img.src = logoDataUri; img.classList.remove('d-none'); }
+        else { img.src = ''; img.classList.add('d-none'); }
+    });
+}
+
+document.getElementById('logoFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 500_000) { alert('Logo image is too large (max 500KB). Please choose a smaller image.'); e.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+        try {
+            await Api.post(`/api/auctions/${auctionId}/logo`, { logoDataUri: reader.result });
+            updateLogoPreviews(reader.result);
+            auction.logoDataUri = reader.result;
+        } catch (err) { alert(err.message); }
+        finally { e.target.value = ''; }
+    };
+    reader.readAsDataURL(file);
+});
+
+document.getElementById('removeLogoBtn').addEventListener('click', async () => {
+    if (!await uiConfirm('Remove the auction logo?', { okText: 'Remove' })) return;
+    try {
+        await Api.post(`/api/auctions/${auctionId}/logo`, { logoDataUri: null });
+        updateLogoPreviews(null);
+        auction.logoDataUri = null;
+    } catch (err) { alert(err.message); }
+});
+
+async function loadSponsors() {
+    const sponsors = await Api.get(`/api/auctions/${auctionId}/sponsors`);
+    document.getElementById('sponsorList').innerHTML = sponsors.map(s => `
+        <div class="text-center">
+            <img src="${s.logoDataUri}" class="sponsor-logo-setup d-block mb-1" alt="${s.name || 'Sponsor'}">
+            <div class="small text-muted">${s.name || ''}</div>
+            <button class="btn btn-sm btn-outline-danger mt-1" onclick="removeSponsor(${s.id})">Remove</button>
+        </div>`).join('') || '<p class="text-muted small mb-0">No sponsors added yet.</p>';
+}
+loadSponsors();
+
+document.getElementById('sponsorFile').addEventListener('change', async (e) => {
+    const file = e.target.files[0];
+    if (!file) return;
+    if (file.size > 500_000) { alert('Sponsor logo is too large (max 500KB). Please choose a smaller image.'); e.target.value = ''; return; }
+    const reader = new FileReader();
+    reader.onload = async () => {
+        try {
+            await Api.post(`/api/auctions/${auctionId}/sponsors`, {
+                name: document.getElementById('sponsorName').value || null,
+                logoDataUri: reader.result
+            });
+            document.getElementById('sponsorName').value = '';
+            loadSponsors();
+        } catch (err) { alert(err.message); }
+        finally { e.target.value = ''; }
+    };
+    reader.readAsDataURL(file);
+});
+
+async function removeSponsor(id) {
+    if (!await uiConfirm('Remove this sponsor?', { okText: 'Remove' })) return;
+    try { await Api.del(`/api/sponsors/${id}`); loadSponsors(); } catch (err) { alert(err.message); }
+}
+</script>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+</body>
+</html>

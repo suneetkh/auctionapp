@@ -1,0 +1,308 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Players</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=team-branding-1" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<div class="container">
+  <div class="d-flex justify-content-between align-items-center mb-3">
+    <h4>Players — <span id="auctionName"></span> <span class="badge bg-secondary ms-2" id="playerCount">0 players</span></h4>
+    <a href="admin-dashboard.html" class="btn btn-outline-secondary btn-sm">← Back to Dashboard</a>
+  </div>
+
+  <div class="card p-3 mb-3 shadow-sm">
+    <h6>Add Player</h6>
+    <form id="addForm" class="row g-2">
+      <div class="col-md-3"><input class="form-control" id="Name" placeholder="Name" required></div>
+      <div class="col-md-2">
+        <select class="form-select" id="Role" required>
+          <option value="All-Rounder" selected>All-Rounder</option>
+          <option value="Batter">Batter</option>
+          <option value="Bowler">Bowler</option>
+          <option value="Wicket-Keeper">Wicket-Keeper</option>
+        </select>
+      </div>
+      <div class="col-md-2"><input class="form-control" id="BasePrice" type="number" placeholder="Base price (defaults to min bid)" required></div>
+      <div class="col-md-2"><input class="form-control" id="SkillTags" placeholder="Skill tags"></div>
+      <div class="col-md-3"><button class="btn btn-primary w-100" type="submit">Add Player</button></div>
+      <div class="col-12"><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="addIsCaptain"><label class="form-check-label fw-semibold" for="addIsCaptain">Assign as captain now</label></div></div>
+      <div class="col-12 d-none" id="addCaptainSettings"><div class="row g-2 p-3 rounded bg-light border">
+        <div class="col-md-5"><label class="form-label small">Captain of team</label><select class="form-select" id="addCaptainTeam"><option value="">Choose team...</option></select></div>
+        <div class="col-md-3"><label class="form-label small">Points / cost</label><select class="form-select" id="addCaptainCostMode"><option value="free">Free / 0</option><option value="paid">Specific value</option></select></div>
+        <div class="col-md-4 d-none" id="addCaptainCostWrap"><label class="form-label small">Point value</label><input class="form-control" type="number" min="0" id="addCaptainCost" value="0"></div>
+      </div></div>
+    </form>
+  </div>
+
+  <div class="card p-3 mb-4 shadow-sm">
+    <h6>CSV Import / Export</h6>
+    <p class="text-muted small mb-2">CSV columns: Name,Role,BasePrice,SkillTags,PhotoUrl,AgeOrDob,Notes,CaptainTeam,CaptainCost. Use the team name or ID; leave captain columns blank for regular players. A blank/0 captain cost means free.</p>
+    <form id="importForm" class="row g-2 align-items-center">
+      <div class="col-md-4"><input class="form-control" type="file" id="csvFile" accept=".csv" required></div>
+      <div class="col-md-2"><button class="btn btn-outline-primary w-100" type="submit">Import CSV</button></div>
+      <div class="col-md-3"><a class="btn btn-outline-secondary w-100" id="exportLink" href="#">Export CSV</a></div>
+      <div class="col-md-3"><a class="btn btn-outline-secondary w-100" id="sampleCsvLink" href="#" download="players_sample.csv">⬇ Sample CSV</a></div>
+    </form>
+  </div>
+
+  <div class="table-responsive"><table class="table table-hover bg-white shadow-sm">
+    <thead><tr><th style="width:55px">#</th><th>Name</th><th>Role</th><th>Base Price</th><th>Status</th><th>Captain</th><th>Team</th><th>Value</th><th>Actions</th></tr></thead>
+    <tbody id="rows"><tr><td colspan="9" class="text-center text-muted">Loading...</td></tr></tbody>
+  </table></div>
+</div>
+
+<div class="modal fade" id="editPlayerModal" tabindex="-1">
+  <div class="modal-dialog">
+    <div class="modal-content">
+      <form id="editPlayerForm">
+        <div class="modal-header">
+          <h5 class="modal-title">Edit Player</h5>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body">
+          <div class="alert alert-warning d-none" id="editIdentityLockedNotice">
+            This player is Sold — name, role, and base price are locked. Use the correction workflow to change them.
+          </div>
+          <input type="hidden" id="editPlayerId">
+          <div class="row g-2">
+            <div class="col-md-6"><label class="form-label small">Name</label><input class="form-control" id="editName" required></div>
+            <div class="col-md-6">
+              <label class="form-label small">Role/Category</label>
+              <select class="form-select" id="editRole" required>
+                <option value="All-Rounder">All-Rounder</option>
+                <option value="Batter">Batter</option>
+                <option value="Bowler">Bowler</option>
+                <option value="Wicket-Keeper">Wicket-Keeper</option>
+              </select>
+            </div>
+            <div class="col-md-4"><label class="form-label small">Base Price</label><input class="form-control" type="number" id="editBasePrice" required></div>
+            <div class="col-md-4"><label class="form-label small">Minimum Bid Override</label><input class="form-control" type="number" id="editMinBidOverride" placeholder="optional"></div>
+            <div class="col-md-4"><label class="form-label small">Skill Tags</label><input class="form-control" id="editSkillTags"></div>
+            <div class="col-md-6"><label class="form-label small">Photo URL</label><input class="form-control" id="editPhotoUrl"></div>
+            <div class="col-md-6"><label class="form-label small">Age / DOB</label><input class="form-control" id="editAgeOrDob"></div>
+            <div class="col-md-6"><label class="form-label small">Contact Info</label><input class="form-control" id="editContactInfo"></div>
+            <div class="col-12"><label class="form-label small">Notes</label><textarea class="form-control" id="editNotes"></textarea></div>
+            <div class="col-12"><hr><div class="form-check form-switch"><input class="form-check-input" type="checkbox" id="editIsCaptain"><label class="form-check-label fw-semibold" for="editIsCaptain">Captain</label></div><div class="form-text">Captains join a team roster immediately and are excluded from bidding.</div></div>
+            <div class="col-12"><div class="alert alert-warning d-none mb-0" id="captainLockedNotice">Captain assignments are locked because this auction has already started. Reset the auction to Draft before changing captains.</div></div>
+            <div class="col-12 d-none" id="captainSettings">
+              <div class="row g-2 p-3 rounded bg-light border">
+                <div class="col-md-6"><label class="form-label small">Captain of team</label><select class="form-select" id="editCaptainTeam"><option value="">Choose team...</option></select></div>
+                <div class="col-md-3"><label class="form-label small">Points / cost</label><select class="form-select" id="editCaptainCostMode"><option value="free">Free / 0</option><option value="paid">Specific value</option></select></div>
+                <div class="col-md-3 d-none" id="captainCostWrap"><label class="form-label small">Point value</label><input class="form-control" type="number" min="0" id="editCaptainCost" value="0"></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        <div class="modal-footer">
+          <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+          <button type="submit" class="btn btn-primary">Save</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+<script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js"></script>
+<script src="js/api.js?v=status-colors-1"></script>
+<script src="js/nav.js?v=users-access-1"></script>
+<script src="js/ui.js?v=notices-2"></script>
+<script>
+if (!requireAuth(['SuperAdmin', 'AuctionAdmin'])) { throw new Error('unauth'); }
+renderNavbar('players.html');
+const auctionId = new URLSearchParams(location.search).get('id') || new URLSearchParams(location.search).get('auctionId');
+if (!auctionId) { alert('Missing auctionId'); location.href = 'admin-dashboard.html'; }
+document.getElementById('exportLink').href = `/api/auctions/${auctionId}/players/export`;
+
+// Matches the exact column order the import parser expects (see players/import): the header
+// row is skipped, so this is just a copy-paste-ready starting point, not itself parsed.
+const sampleCsv = [
+  'Name,Role,BasePrice,SkillTags,PhotoUrl,AgeOrDob,Notes,CaptainTeam,CaptainCost',
+  'Virat K.,Batter,500,Top-order,,,Explosive opener,Mumbai Mavericks,0',
+  'Jasprit B.,Bowler,600,Pace,,,Death-overs specialist,,',
+  'MS D.,Wicket-Keeper,700,Finisher,,,Captaincy experience',
+  'Hardik P.,All-Rounder,450,Power-hitter,,,Bowls medium pace'
+].join('\n');
+const sampleBlobUrl = URL.createObjectURL(new Blob([sampleCsv], { type: 'text/csv' }));
+document.getElementById('sampleCsvLink').href = sampleBlobUrl;
+
+let teamsById = {};
+let teams = [];
+let playersById = {};
+let currentAuction = null;
+
+async function load() {
+  const auction = await Api.get(`/api/auctions/${auctionId}`);
+  currentAuction = auction;
+  document.getElementById('auctionName').textContent = auction.name;
+  const basePriceInput = document.getElementById('BasePrice');
+  if (!basePriceInput.value) basePriceInput.value = auction.minimumBidAmount;
+  teams = await Api.get(`/api/auctions/${auctionId}/teams`);
+  teamsById = Object.fromEntries(teams.map(t => [t.id, t.name]));
+  document.getElementById('addCaptainTeam').innerHTML = '<option value="">Choose team...</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  const players = await Api.get(`/api/auctions/${auctionId}/players`);
+  playersById = Object.fromEntries(players.map(p => [p.id, p]));
+  document.getElementById('playerCount').textContent = `${players.length} player${players.length === 1 ? '' : 's'}`;
+  document.getElementById('rows').innerHTML = players.map((p, index) => `
+    <tr class="${p.status === 'Sold' ? 'table-sold' : (p.status === 'Unsold' || p.status === 'FinalUnsold') ? 'table-unsold' : ''}">
+      <td class="text-muted fw-semibold">${index + 1}</td><td>${p.name}${p.isCaptain ? ' <span class="badge bg-info text-dark">Captain</span>' : ''}</td><td>${p.role}</td><td>${fmtMoney(p.basePrice)}</td>
+      <td><span class="badge ${p.isCaptain ? 'bg-info text-dark' : statusBadgeClass(p.status)}">${p.isCaptain ? 'Captain' : humanizeStatus(p.status)}</span></td>
+      <td>${p.isCaptain ? `<span class="fw-semibold text-info">Yes</span><div class="small text-muted">${p.captainCost > 0 ? fmtMoney(p.captainCost) + ' points' : 'Free'}</div>` : '<span class="text-muted">No</span>'}</td>
+      <td>${p.teamId ? (teamsById[p.teamId] || p.teamId) : '-'}</td>
+      <td>${p.isCaptain ? ((p.captainCost > 0) ? fmtMoney(p.captainCost) : '') : (p.salePrice ? fmtMoney(p.salePrice) : '-')}</td>
+      <td>
+        <button class="btn btn-sm btn-outline-primary" onclick="openEditPlayer(${p.id})">Edit</button>
+        ${p.status === 'Sold' || p.isCaptain ? '' : `<button class="btn btn-sm btn-outline-danger" onclick="removePlayer(${p.id})">Delete</button>`}
+      </td>
+    </tr>`).join('') || '<tr><td colspan="9" class="text-center text-muted">No players yet</td></tr>';
+}
+load().catch(err => alert(err.message));
+
+document.getElementById('addForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const isCaptain = document.getElementById('addIsCaptain').checked;
+  const captainTeamId = Number(document.getElementById('addCaptainTeam').value) || null;
+  const paid = document.getElementById('addCaptainCostMode').value === 'paid';
+  const captainCost = paid ? Number(document.getElementById('addCaptainCost').value) : 0;
+  if (isCaptain && !captainTeamId) return showUiNotice('Select which team this player will captain.', 'warning');
+  if (isCaptain && paid && (!(captainCost > 0) || !Number.isFinite(captainCost))) return showUiNotice('Enter a captain point value greater than zero, or choose Free / 0.', 'warning');
+  const payload = {
+    name: document.getElementById('Name').value,
+    role: document.getElementById('Role').value,
+    basePrice: Number(document.getElementById('BasePrice').value),
+    skillTags: document.getElementById('SkillTags').value,
+    isCaptain,
+    captainTeamId: isCaptain ? captainTeamId : null,
+    captainCost: isCaptain ? captainCost : 0
+  };
+  try {
+    await Api.post(`/api/auctions/${auctionId}/players`, payload);
+    e.target.reset();
+    updateAddCaptainSettings();
+    if (currentAuction) document.getElementById('BasePrice').value = currentAuction.minimumBidAmount;
+    await load();
+    showUiNotice(isCaptain ? `Player added and assigned as captain of ${teamsById[captainTeamId]}.` : 'Player added.', 'success');
+  } catch (err) { alert(err.message); }
+});
+
+document.getElementById('importForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const file = document.getElementById('csvFile').files[0];
+  if (!file) return;
+  const fd = new FormData();
+  fd.append('file', file);
+  try {
+    const res = await Api.postForm(`/api/auctions/${auctionId}/players/import`, fd);
+    await load();
+    const summary = `Imported ${res.imported} players${res.captainsAssigned ? `; ${res.captainsAssigned} captain${res.captainsAssigned === 1 ? '' : 's'} assigned` : ''}.`;
+    showUiNotice(summary, 'success');
+    if (res.warnings?.length) showUiNotice(res.warnings.join(' '), 'warning', 10000);
+  } catch (err) { alert(err.message); }
+});
+
+function updateAddCaptainSettings() {
+  const enabled = document.getElementById('addIsCaptain').checked;
+  const paid = document.getElementById('addCaptainCostMode').value === 'paid';
+  document.getElementById('addCaptainSettings').classList.toggle('d-none', !enabled);
+  document.getElementById('addCaptainCostWrap').classList.toggle('d-none', !enabled || !paid);
+}
+document.getElementById('addIsCaptain').addEventListener('change', updateAddCaptainSettings);
+document.getElementById('addCaptainCostMode').addEventListener('change', updateAddCaptainSettings);
+
+async function removePlayer(id) {
+  if (!await uiConfirm('Delete this player?', { danger: true, okText: 'Delete' })) return;
+  try { await Api.del(`/api/players/${id}`); load(); } catch (err) { alert(err.message); }
+}
+
+function openEditPlayer(id) {
+  const p = playersById[id];
+  if (!p) return;
+  document.getElementById('editPlayerId').value = p.id;
+  document.getElementById('editName').value = p.name;
+  document.getElementById('editRole').value = p.role;
+  document.getElementById('editBasePrice').value = p.basePrice;
+  document.getElementById('editMinBidOverride').value = p.minimumBidOverride ?? '';
+  document.getElementById('editSkillTags').value = p.skillTags ?? '';
+  document.getElementById('editPhotoUrl').value = p.photoUrl ?? '';
+  document.getElementById('editAgeOrDob').value = p.ageOrDob ?? '';
+  document.getElementById('editContactInfo').value = p.contactInfo ?? '';
+  document.getElementById('editNotes').value = p.notes ?? '';
+  document.getElementById('editIsCaptain').checked = p.isCaptain === true;
+  document.getElementById('editCaptainTeam').innerHTML = '<option value="">Choose team...</option>' + teams.map(t => `<option value="${t.id}">${t.name}</option>`).join('');
+  document.getElementById('editCaptainTeam').value = p.isCaptain && p.teamId ? p.teamId : '';
+  document.getElementById('editCaptainCostMode').value = p.isCaptain && (p.captainCost > 0) ? 'paid' : 'free';
+  document.getElementById('editCaptainCost').value = p.captainCost ?? 0;
+  const captainLocked = !['Draft', 'Ready'].includes(currentAuction?.status);
+  document.getElementById('captainLockedNotice').classList.toggle('d-none', !captainLocked);
+  ['editIsCaptain', 'editCaptainTeam', 'editCaptainCostMode', 'editCaptainCost'].forEach(id => document.getElementById(id).disabled = captainLocked);
+  updateCaptainSettings();
+
+  const locked = p.status === 'Sold';
+  document.getElementById('editIdentityLockedNotice').classList.toggle('d-none', !locked);
+  ['editName', 'editRole', 'editBasePrice'].forEach(id => document.getElementById(id).disabled = locked);
+
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('editPlayerModal')).show();
+}
+
+function updateCaptainSettings() {
+  const enabled = document.getElementById('editIsCaptain').checked;
+  const paid = document.getElementById('editCaptainCostMode').value === 'paid';
+  document.getElementById('captainSettings').classList.toggle('d-none', !enabled);
+  document.getElementById('captainCostWrap').classList.toggle('d-none', !enabled || !paid);
+}
+document.getElementById('editIsCaptain').addEventListener('change', updateCaptainSettings);
+document.getElementById('editCaptainCostMode').addEventListener('change', updateCaptainSettings);
+
+document.getElementById('editPlayerForm').addEventListener('submit', async (e) => {
+  e.preventDefault();
+  const id = document.getElementById('editPlayerId').value;
+  const locked = playersById[id]?.status === 'Sold';
+  const isCaptain = document.getElementById('editIsCaptain').checked;
+  const captainEditable = ['Draft', 'Ready'].includes(currentAuction?.status);
+  const captainTeamId = Number(document.getElementById('editCaptainTeam').value) || null;
+  const paidCaptain = document.getElementById('editCaptainCostMode').value === 'paid';
+  const captainCost = paidCaptain ? Number(document.getElementById('editCaptainCost').value) : 0;
+  if (captainEditable && isCaptain && !captainTeamId) {
+    showUiNotice('Select which team this player will captain.', 'warning');
+    return;
+  }
+  if (captainEditable && isCaptain && paidCaptain && (!(captainCost > 0) || !Number.isFinite(captainCost))) {
+    showUiNotice('Enter a captain point value greater than zero, or choose Free / 0.', 'warning');
+    return;
+  }
+  const payload = {
+    photoUrl: document.getElementById('editPhotoUrl').value,
+    ageOrDob: document.getElementById('editAgeOrDob').value,
+    skillTags: document.getElementById('editSkillTags').value,
+    minimumBidOverride: document.getElementById('editMinBidOverride').value ? Number(document.getElementById('editMinBidOverride').value) : null,
+    notes: document.getElementById('editNotes').value,
+    contactInfo: document.getElementById('editContactInfo').value
+  };
+  if (!locked) {
+    payload.name = document.getElementById('editName').value;
+    payload.role = document.getElementById('editRole').value;
+    payload.basePrice = Number(document.getElementById('editBasePrice').value);
+  }
+  try {
+    await Api.patch(`/api/players/${id}`, payload);
+    if (captainEditable) {
+      const captainResult = await Api.put(`/api/players/${id}/captain`, {
+        isCaptain,
+        teamId: isCaptain ? captainTeamId : null,
+        cost: isCaptain ? captainCost : 0
+      });
+      if (isCaptain && captainResult?.isCaptain !== true) throw new Error('Captain assignment was not saved. Please try again.');
+    }
+    bootstrap.Modal.getInstance(document.getElementById('editPlayerModal')).hide();
+    await load();
+    showUiNotice(captainEditable && isCaptain ? `Captain assigned to ${teamsById[captainTeamId]}.` : 'Player settings saved.', 'success');
+  } catch (err) {
+    if (err.status === 409) alert('Locked: ' + err.message);
+    else alert(err.message);
+  }
+});
+</script>
+</body>
+</html>

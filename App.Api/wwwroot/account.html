@@ -1,0 +1,61 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Account - Player Auction</title>
+<link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+<link href="css/app.css?v=buttons-2" rel="stylesheet">
+</head>
+<body>
+<div id="app-navbar"></div>
+<main class="container" style="max-width:720px">
+  <div class="card shadow-sm"><div class="card-body p-4">
+    <h3>Account</h3>
+    <p class="text-muted">Signed in as <strong id="accountEmail"></strong></p>
+    <form id="identifierForm" autocomplete="off" class="mb-4">
+      <h5>Change login name</h5>
+      <div class="mb-3"><label class="form-label">New email or username</label><input id="newIdentifier" type="text" class="form-control" value="admin" autocomplete="off" autocapitalize="none" spellcheck="false" required></div>
+      <div class="mb-3"><label class="form-label">Current password</label><div class="input-group"><input id="identifierPassword" type="password" class="form-control" autocomplete="current-password" required><button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('identifierPassword', this)">Show</button></div></div>
+      <button class="btn btn-primary" type="submit">Change Login Name</button>
+    </form>
+    <hr>
+    <h5>Change password</h5>
+    <form id="passwordForm" autocomplete="off">
+      <div class="mb-3"><label class="form-label">Current password</label><div class="input-group"><input id="currentPassword" type="password" class="form-control" autocomplete="current-password" required><button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('currentPassword', this)">Show</button></div></div>
+      <div class="mb-3"><label class="form-label">New password</label><div class="input-group"><input id="newPassword" type="password" class="form-control" autocomplete="new-password" minlength="12" required><button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('newPassword', this)">Show</button></div><div class="form-text">At least 12 characters with uppercase, lowercase, a number, and a symbol.</div></div>
+      <div class="mb-3"><label class="form-label">Confirm new password</label><div class="input-group"><input id="confirmPassword" type="password" class="form-control" autocomplete="new-password" minlength="12" required><button class="btn btn-outline-secondary" type="button" onclick="togglePasswordVisibility('confirmPassword', this)">Show</button></div></div>
+      <button class="btn btn-primary" type="submit">Change Password</button>
+    </form>
+  </div></div>
+</main>
+<script src="js/api.js?v=status-colors-1"></script><script src="js/nav.js?v=users-access-1"></script><script src="js/ui.js?v=notices-2"></script>
+<script>
+if (!requireAuth()) throw new Error('unauth');
+renderNavbar('account.html');
+document.getElementById('accountEmail').textContent = localStorage.getItem('email') || '';
+document.getElementById('identifierForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  try {
+    await Api.post('/api/auth/change-identifier', {
+      currentPassword: document.getElementById('identifierPassword').value,
+      newIdentifier: document.getElementById('newIdentifier').value
+    });
+    Api.clearSession();
+    alert('Login name changed. Please sign in with the new name.');
+    location.href = 'login.html';
+  } catch (err) { showUiNotice(err.message, 'error'); }
+});
+document.getElementById('passwordForm').addEventListener('submit', async e => {
+  e.preventDefault();
+  const currentPassword = document.getElementById('currentPassword').value;
+  const newPassword = document.getElementById('newPassword').value;
+  if (newPassword !== document.getElementById('confirmPassword').value) return showUiNotice('New passwords do not match', 'error');
+  try {
+    await Api.post('/api/auth/change-password', { currentPassword, newPassword });
+    Api.clearSession();
+    alert('Password changed. Please sign in again.');
+    location.href = 'login.html';
+  } catch (err) { showUiNotice(err.message, 'error'); }
+});
+</script>
+</body></html>
