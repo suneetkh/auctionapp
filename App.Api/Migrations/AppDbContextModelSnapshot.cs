@@ -64,6 +64,9 @@ namespace App.Api.Migrations
                     b.Property<int?>("RosterMinSize")
                         .HasColumnType("INTEGER");
 
+                    b.Property<bool>("SelectionRevealPending")
+                        .HasColumnType("INTEGER");
+
                     b.Property<string>("SportType")
                         .IsRequired()
                         .HasColumnType("TEXT");
@@ -176,6 +179,10 @@ namespace App.Api.Migrations
 
                     b.Property<bool>("PublicLivePanelEnabled")
                         .HasColumnType("INTEGER");
+
+                    b.Property<string>("SelectionDisplayMode")
+                        .IsRequired()
+                        .HasColumnType("TEXT");
 
                     b.Property<bool>("SoldAnimationEnabled")
                         .HasColumnType("INTEGER");

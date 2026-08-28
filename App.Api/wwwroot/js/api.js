@@ -105,3 +105,14 @@ function statusBadgeClass(status) {
         default: return 'badge-default';
     }
 }
+
+// Multiple SignalR events can describe one action (for example, sold + balance updated).
+// Share one in-flight refresh instead of downloading the same state several times at once.
+function singleFlight(task) {
+    let active = null;
+    return (...args) => {
+        if (active) return active;
+        active = Promise.resolve().then(() => task(...args)).finally(() => { active = null; });
+        return active;
+    };
+}

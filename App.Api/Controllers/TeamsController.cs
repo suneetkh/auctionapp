@@ -40,12 +40,19 @@ public class TeamsController : ControllerBase
     [AllowAnonymous]
     public async Task<IActionResult> GetTeams(int auctionId)
     {
+        var auction = await _db.Auctions.Include(a => a.Rules).FirstOrDefaultAsync(a => a.Id == auctionId);
+        if (auction == null) return NotFound();
         var teams = await _db.Teams.Where(t => t.AuctionId == auctionId).ToListAsync();
         var result = teams.Select(t => new
         {
             t.Id, t.AuctionId, t.Name, t.LogoUrl, t.TeamColor, t.OwnerUserId, t.ContactInfo, t.Notes, t.OpeningBalance, t.IsActive,
             AvailableBalance = _ledger.GetAvailableBalance(t.Id),
-            RosterCount = _db.Players.Count(p => p.TeamId == t.Id && (p.Status == PlayerStatus.Sold || p.IsCaptain))
+            RosterCount = _db.Players.Count(p => p.TeamId == t.Id && (p.Status == PlayerStatus.Sold || p.IsCaptain)),
+            MaximumBid = TeamBidCapacityRule.CalculateMaximumBid(
+                auction,
+                _db.Players.Count(p => p.TeamId == t.Id && (p.Status == PlayerStatus.Sold || p.IsCaptain)),
+                _ledger.GetAvailableBalance(t.Id)),
+            ReservePerRequiredSlot = TeamBidCapacityRule.ReservePerRequiredSlot(auction)
         });
         return Ok(result);
     }

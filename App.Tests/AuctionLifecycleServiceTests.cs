@@ -87,4 +87,59 @@ public class AuctionLifecycleServiceTests
         var (ok2, _) = await svc.ValidateCompleteAsync(auction.Id, forceConfirm: true);
         Assert.True(ok2);
     }
+
+    [Fact]
+    public async Task Reset_PreservesCaptainAndRecalculatesMaximumBidFromRestoredPurse()
+    {
+        var db = TestDbFactory.Create();
+        var auction = new Auction
+        {
+            Name = "A",
+            Status = AuctionStatus.Live,
+            CurrentRound = 2,
+            MinimumBidAmount = 100,
+            RosterMinSize = 3,
+            SelectionRevealPending = true,
+            Rules = new AuctionRules()
+        };
+        db.Auctions.Add(auction);
+        db.SaveChanges();
+
+        var team = new Team { AuctionId = auction.Id, Name = "T1", OpeningBalance = 1000 };
+        db.Teams.Add(team);
+        db.SaveChanges();
+        var ledger = new TeamLedgerService(db);
+        ledger.EnsureOpeningBalance(team);
+        db.SaveChanges();
+
+        var captain = new Player
+        {
+            AuctionId = auction.Id, Name = "Captain", IsCaptain = true, TeamId = team.Id,
+            CaptainCost = 200, Status = PlayerStatus.Withdrawn
+        };
+        var soldPlayer = new Player
+        {
+            AuctionId = auction.Id, Name = "Sold player", TeamId = team.Id,
+            SalePrice = 300, SoldRound = 1, Status = PlayerStatus.Sold
+        };
+        db.Players.AddRange(captain, soldPlayer);
+        db.SaveChanges();
+        ledger.AddEntry(team.Id, LedgerTransactionType.CaptainAssignment, -200, "Captain", captain.Id);
+        ledger.AddEntry(team.Id, LedgerTransactionType.Purchase, -300, "Purchase", soldPlayer.Id);
+        db.SaveChanges();
+
+        var service = new AuctionLifecycleService(db, new AuditLogService(db), ledger);
+        var result = await service.ResetAuctionAsync(auction.Id, 1);
+
+        Assert.True(result.Success);
+        Assert.True(captain.IsCaptain);
+        Assert.Equal(team.Id, captain.TeamId);
+        Assert.Equal(PlayerStatus.Withdrawn, captain.Status);
+        Assert.Equal(200, captain.CaptainCost);
+        Assert.Equal(PlayerStatus.Available, soldPlayer.Status);
+        Assert.Null(soldPlayer.TeamId);
+        Assert.Equal(800, ledger.GetAvailableBalance(team.Id));
+        Assert.Equal(700, TeamBidCapacityRule.CalculateMaximumBid(auction, 1, ledger.GetAvailableBalance(team.Id)));
+        Assert.False(auction.SelectionRevealPending);
+    }
 }

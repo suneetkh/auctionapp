@@ -136,6 +136,7 @@ public class AuctionLifecycleService
         var beforeAuction = new { auction.Status, auction.CurrentRound };
         auction.Status = AuctionStatus.Draft;
         auction.CurrentRound = 1;
+        auction.SelectionRevealPending = false;
 
         _audit.Write("Auction", auctionId, "Reset", beforeAuction,
             new { auction.Status, auction.CurrentRound }, "Full reset to Draft", performedByUserId);

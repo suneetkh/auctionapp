@@ -198,6 +198,31 @@ body { background-color: #f5f6fa; }
 }
 
 .player-card[draggable="true"] { cursor: grab; }
+.player-wheel-overlay { position:fixed; inset:0; z-index:1085; display:grid; place-items:center; padding:1rem; background:rgba(2,12,27,.82); backdrop-filter:blur(7px); }
+.player-wheel-dialog { width:min(96vw, 720px); padding:1rem 1.25rem 1.2rem; text-align:center; border:1px solid rgba(103,232,249,.35); border-radius:1.25rem; background:linear-gradient(145deg,#f8fafc,#ecfeff); box-shadow:0 28px 80px rgba(0,0,0,.45); }
+.player-wheel-kicker { color:#0e7490; font-size:.72rem; font-weight:950; letter-spacing:.16em; }
+.player-wheel-title { margin:.15rem 0 .6rem; color:#0f172a; font-size:clamp(1.45rem,3vw,2rem); font-weight:950; }
+.player-wheel-stage { position:relative; width:min(76vh, 78vw, 560px); aspect-ratio:1; margin:auto; }
+.player-wheel-stage canvas { display:block; width:100% !important; height:100% !important; }
+.player-wheel-pointer { position:absolute; top:-2px; left:50%; z-index:2; width:0; height:0; transform:translateX(-50%); border-left:16px solid transparent; border-right:16px solid transparent; border-top:34px solid #ef4444; filter:drop-shadow(0 3px 2px rgba(0,0,0,.32)); }
+.player-wheel-pointer.is-ticking { transform-origin:50% 0; animation:player-wheel-pointer-click .12s ease-out; }
+@keyframes player-wheel-pointer-click { 0% { transform:translateX(-50%) rotate(0); } 42% { transform:translateX(-50%) rotate(-11deg); } 100% { transform:translateX(-50%) rotate(0); } }
+.player-wheel-needle-name { width:min(100%, 520px); min-height:2.3rem; margin:.35rem auto 0; padding:.38rem .75rem; overflow:hidden; color:#075985; font-size:clamp(1.05rem,2.5vw,1.45rem); font-weight:950; line-height:1.15; text-overflow:ellipsis; white-space:nowrap; border:1px solid #a5f3fc; border-radius:.65rem; background:#ecfeff; }
+.player-wheel-count { margin-top:.55rem; color:#475569; font-size:.86rem; font-weight:750; }
+.draw-winner-celebration { position:fixed; inset:0; z-index:1100; display:grid; place-items:center; overflow:hidden; pointer-events:none; background:radial-gradient(circle,rgba(255,255,255,.08),transparent 48%); animation:draw-winner-enter .28s ease-out both; }
+.draw-winner-panel { position:relative; z-index:2; width:min(88vw,600px); padding:1.05rem 1.4rem 1.2rem; overflow:hidden; text-align:center; border:2px solid rgba(255,255,255,.92); border-radius:1.2rem; background:linear-gradient(145deg,rgba(8,47,73,.96),rgba(15,23,42,.97)); box-shadow:0 22px 75px rgba(0,0,0,.55),0 0 0 8px rgba(34,211,238,.18); animation:draw-winner-pop .58s cubic-bezier(.16,1.35,.3,1) both; }
+.draw-winner-panel::after { content:""; position:absolute; inset:-80% -25%; background:linear-gradient(110deg,transparent 38%,rgba(255,255,255,.32) 49%,transparent 60%); animation:draw-winner-shine 1.15s .25s ease-out both; }
+.draw-winner-kicker { position:relative; z-index:1; color:#fde047; font-size:clamp(.78rem,2vw,1rem); font-weight:950; letter-spacing:.2em; }
+.draw-winner-name { position:relative; z-index:1; margin-top:.28rem; color:#fff; font-size:clamp(2rem,6vw,4rem); font-weight:1000; line-height:1.02; overflow-wrap:anywhere; text-shadow:0 4px 18px rgba(0,0,0,.42); }
+.draw-winner-confetti { position:absolute; inset:0; z-index:1; overflow:hidden; }
+.draw-winner-confetti i { position:absolute; top:-8vh; left:0; width:10px; height:18px; border-radius:2px; transform:translateX(var(--confetti-x)); animation:draw-confetti-fall var(--confetti-duration) var(--confetti-delay) cubic-bezier(.18,.72,.38,1) both; }
+.draw-winner-confetti i.is-round { width:11px; height:11px; border-radius:50%; }
+.draw-winner-out { opacity:0; transition:opacity .38s ease; }
+@keyframes draw-winner-enter { from { opacity:0; } to { opacity:1; } }
+@keyframes draw-winner-pop { 0% { opacity:0; transform:scale(.55) rotate(-2deg); } 68% { transform:scale(1.045) rotate(.5deg); } 100% { opacity:1; transform:scale(1); } }
+@keyframes draw-winner-shine { from { transform:translateX(-70%) rotate(8deg); } to { transform:translateX(80%) rotate(8deg); } }
+@keyframes draw-confetti-fall { 0% { transform:translate3d(var(--confetti-x),-8vh,0) rotate(0); opacity:0; } 8% { opacity:1; } 100% { transform:translate3d(calc(var(--confetti-x) + var(--confetti-drift)),108vh,0) rotate(var(--confetti-turn)); opacity:.95; } }
+@media (prefers-reduced-motion:reduce) { .draw-winner-panel,.draw-winner-celebration,.draw-winner-confetti i { animation-duration:.01ms !important; } }
 .player-card.being-dragged { opacity: .4; }
 
 .teams-section {
@@ -343,6 +368,10 @@ body { background-color: #f5f6fa; }
 .team-roster-scroll.no-roster-scroll { max-height: none; overflow-y: visible; }
 .team-box .team-title { font-size:1.15rem; line-height:1.15; }
 .team-roster-player-name { color:#172033; font-weight:500; }
+.team-bid-capacity { display:grid; grid-template-columns:1fr 1fr; gap:.45rem; }
+.team-bid-capacity > div { min-width:0; padding:.42rem .5rem; border:1px solid #e2e8f0; border-radius:.55rem; background:#f8fafc; }
+.team-bid-capacity span { display:block; color:#64748b; font-size:.68rem; font-weight:700; line-height:1.1; }
+.team-bid-capacity strong { display:block; margin-top:.15rem; color:#0f172a; font-size:1.05rem; line-height:1.1; }
 .team-roster-player-skill { margin-left:.2rem; color:#7c8798; font-size:.82em; font-weight:550; }
 
 .balance-positive { color: #198754; font-weight: 600; }

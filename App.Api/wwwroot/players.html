@@ -123,7 +123,7 @@ const sampleCsv = [
   'Virat K.,Batter,500,Top-order,,,Explosive opener,Mumbai Mavericks,0',
   'Jasprit B.,Bowler,600,Pace,,,Death-overs specialist,,',
   'MS D.,Wicket-Keeper,700,Finisher,,,Captaincy experience',
-  'Hardik P.,All-Rounder,450,Power-hitter,,,Bowls medium pace'
+  'Hardik P.,All-Rounder,500,Power-hitter,,,Bowls medium pace'
 ].join('\n');
 const sampleBlobUrl = URL.createObjectURL(new Blob([sampleCsv], { type: 'text/csv' }));
 document.getElementById('sampleCsvLink').href = sampleBlobUrl;
@@ -138,6 +138,9 @@ async function load() {
   currentAuction = auction;
   document.getElementById('auctionName').textContent = auction.name;
   const basePriceInput = document.getElementById('BasePrice');
+  basePriceInput.step = auction.bidIncrementAmount;
+  document.getElementById('editBasePrice').step = auction.bidIncrementAmount;
+  document.getElementById('editMinBidOverride').step = auction.bidIncrementAmount;
   if (!basePriceInput.value) basePriceInput.value = auction.minimumBidAmount;
   teams = await Api.get(`/api/auctions/${auctionId}/teams`);
   teamsById = Object.fromEntries(teams.map(t => [t.id, t.name]));

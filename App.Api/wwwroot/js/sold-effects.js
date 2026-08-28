@@ -99,9 +99,57 @@
     const context = getAudioContext();
     if (!context || context.state !== 'running') { updateUnlockButton(); return; }
     const start = context.currentTime + .01;
-    tone(context, 523.25, start, .2, .085, 'sine');
-    tone(context, 659.25, start + .1, .25, .075, 'sine');
-    tone(context, 783.99, start + .2, .32, .07, 'sine');
+    // Short winner fanfare: a bright stop cue followed by a rising celebratory chord.
+    tone(context, 392.00, start, .13, .075, 'triangle');
+    tone(context, 523.25, start + .09, .28, .09, 'sine');
+    tone(context, 659.25, start + .19, .34, .085, 'sine');
+    tone(context, 783.99, start + .29, .48, .08, 'sine');
+    tone(context, 1046.50, start + .39, .62, .055, 'sine');
+  }
+
+  function secureRandomUnit() {
+    const value = new Uint32Array(1);
+    crypto.getRandomValues(value);
+    return value[0] / 4294967296;
+  }
+
+  function celebrateDraw(playerName, accentColor) {
+    playDrawReveal();
+    document.querySelector('.draw-winner-celebration')?.remove();
+
+    const overlay = document.createElement('div');
+    overlay.className = 'draw-winner-celebration';
+    overlay.setAttribute('role', 'status');
+    overlay.setAttribute('aria-live', 'assertive');
+
+    const colors = [accentColor || '#06b6d4', '#facc15', '#22c55e', '#f97316', '#ec4899', '#ffffff'];
+    const confetti = document.createElement('div');
+    confetti.className = 'draw-winner-confetti';
+    for (let index = 0; index < 72; index++) {
+      const piece = document.createElement('i');
+      piece.style.setProperty('--confetti-x', `${secureRandomUnit() * 100}vw`);
+      piece.style.setProperty('--confetti-drift', `${(secureRandomUnit() - .5) * 28}vw`);
+      piece.style.setProperty('--confetti-delay', `${secureRandomUnit() * .38}s`);
+      piece.style.setProperty('--confetti-duration', `${1.45 + secureRandomUnit() * 1.05}s`);
+      piece.style.setProperty('--confetti-turn', `${180 + secureRandomUnit() * 900}deg`);
+      piece.style.background = colors[Math.floor(secureRandomUnit() * colors.length)];
+      piece.classList.toggle('is-round', secureRandomUnit() > .76);
+      confetti.appendChild(piece);
+    }
+
+    const panel = document.createElement('div');
+    panel.className = 'draw-winner-panel';
+    const kicker = document.createElement('div');
+    kicker.className = 'draw-winner-kicker';
+    kicker.textContent = 'NOW BIDDING';
+    const name = document.createElement('div');
+    name.className = 'draw-winner-name';
+    name.textContent = playerName || 'Selected player';
+    panel.append(kicker, name);
+    overlay.append(confetti, panel);
+    document.body.appendChild(overlay);
+    window.setTimeout(() => overlay.classList.add('draw-winner-out'), 2050);
+    window.setTimeout(() => overlay.remove(), 2450);
   }
 
   function showAnimation(details) {
@@ -161,5 +209,5 @@
     if ((settings.soundEnabled || settings.drawSoundEnabled) && masterSoundEnabled) unlockAudio().catch(() => {});
   }, { once: true, capture: true });
 
-  window.SoldEffects = { configure, celebrate, unlockAudio, playDrawTick, playDrawReveal };
+  window.SoldEffects = { configure, celebrate, celebrateDraw, unlockAudio, playDrawTick, playDrawReveal };
 })();

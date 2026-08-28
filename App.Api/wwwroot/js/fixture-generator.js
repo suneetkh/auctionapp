@@ -4,6 +4,7 @@ const FixtureGenerator = (() => {
     let auctionTeamCount = 0;
     let state = null;
     let locked = false;
+    let savedDrawAssignments = [];
 
     const el = id => document.getElementById(id);
     const storageKey = () => `fixtureGenerator:${auctionId}`;
@@ -39,7 +40,8 @@ const FixtureGenerator = (() => {
 
     function getDrawMap() {
         let assignments = [];
-        if (window.TournamentDraw?.getAssignments) assignments = TournamentDraw.getAssignments();
+        if (typeof TournamentDraw !== 'undefined' && TournamentDraw.getAssignments) assignments = TournamentDraw.getAssignments();
+        if (!assignments.length) assignments = savedDrawAssignments;
         if (!assignments.length) {
             try {
                 assignments = JSON.parse(localStorage.getItem(`tournamentDraw:${auctionId}`) || '{}').assignments || [];
@@ -547,6 +549,10 @@ const FixtureGenerator = (() => {
     async function init(id) {
         auctionId = String(id);
         try {
+            const drawState = await Api.get(`/api/auctions/${auctionId}/planning/draw`);
+            savedDrawAssignments = Array.isArray(drawState?.assignments) ? drawState.assignments : [];
+        } catch (error) { console.error('Unable to load saved draw assignments for fixtures', error); }
+        try {
             const locks = await Api.get(`/api/auctions/${auctionId}/planning/locks`);
             locked = locks.fixturesLocked === true;
         } catch (error) { console.error('Unable to load planning locks', error); }
@@ -603,7 +609,10 @@ const FixtureGenerator = (() => {
             }
         });
         window.addEventListener('tournament-draw-updated', event => {
-            if (String(event.detail?.auctionId) === auctionId) render();
+            if (String(event.detail?.auctionId) === auctionId) {
+                savedDrawAssignments = Array.isArray(event.detail?.assignments) ? event.detail.assignments : savedDrawAssignments;
+                render();
+            }
         });
     }
 

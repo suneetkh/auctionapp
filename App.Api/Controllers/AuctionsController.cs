@@ -126,7 +126,7 @@ public class AuctionsController : ControllerBase
         var auction = await _db.Auctions.Include(a => a.Rules).FirstOrDefaultAsync(a => a.Id == id);
         if (auction == null) return NotFound();
 
-        var presentationFieldsChanged = req.SoldAnimationEnabled.HasValue || req.SoldAnimationStyle != null || req.SoldSoundEnabled.HasValue || req.DrawSoundEnabled.HasValue ||
+        var presentationFieldsChanged = req.SoldAnimationEnabled.HasValue || req.SoldAnimationStyle != null || req.SoldSoundEnabled.HasValue || req.DrawSoundEnabled.HasValue || req.SelectionDisplayMode != null ||
             req.PublicLivePanelEnabled.HasValue;
 
         var ruleFieldsChanged = req.MinimumBidAmount.HasValue || req.BidIncrementAmount.HasValue ||
@@ -159,6 +159,8 @@ public class AuctionsController : ControllerBase
         {
             if (req.SoldAnimationStyle != null && req.SoldAnimationStyle is not ("Stamp" or "Hammer"))
                 return BadRequest(new { error = "Sold animation style must be Stamp or Hammer." });
+            if (req.SelectionDisplayMode != null && req.SelectionDisplayMode is not ("Meter" or "Wheel"))
+                return BadRequest(new { error = "Player selection display must be Meter or Wheel." });
             if (req.UnsoldRoundsEnabled.HasValue) auction.Rules.UnsoldRoundsEnabled = req.UnsoldRoundsEnabled.Value;
             if (req.MaxUnsoldRounds.HasValue) auction.Rules.MaxUnsoldRounds = req.MaxUnsoldRounds.Value;
             if (req.AllowReducedBasePriceInUnsold.HasValue) auction.Rules.AllowReducedBasePriceInUnsold = req.AllowReducedBasePriceInUnsold.Value;
@@ -169,6 +171,7 @@ public class AuctionsController : ControllerBase
             if (req.SoldAnimationStyle != null) auction.Rules.SoldAnimationStyle = req.SoldAnimationStyle;
             if (req.SoldSoundEnabled.HasValue) auction.Rules.SoldSoundEnabled = req.SoldSoundEnabled.Value;
             if (req.DrawSoundEnabled.HasValue) auction.Rules.DrawSoundEnabled = req.DrawSoundEnabled.Value;
+            if (req.SelectionDisplayMode != null) auction.Rules.SelectionDisplayMode = req.SelectionDisplayMode;
             if (req.PublicLivePanelEnabled.HasValue) auction.Rules.PublicLivePanelEnabled = req.PublicLivePanelEnabled.Value;
         }
 
@@ -182,6 +185,7 @@ public class AuctionsController : ControllerBase
                 soldAnimationStyle = auction.Rules?.SoldAnimationStyle ?? "Stamp",
                 soldSoundEnabled = auction.Rules?.SoldSoundEnabled ?? true,
                 drawSoundEnabled = auction.Rules?.DrawSoundEnabled ?? true,
+                selectionDisplayMode = auction.Rules?.SelectionDisplayMode ?? "Meter",
                 publicLivePanelEnabled = auction.Rules?.PublicLivePanelEnabled ?? false
             });
         }

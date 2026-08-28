@@ -55,7 +55,7 @@ public class SaleService
         var floor = Math.Max(player.MinimumBidOverride ?? player.BasePrice, auction.MinimumBidAmount);
         var highestBid = _db.Bids.Where(b => b.PlayerId == playerId && b.IsValid)
             .ToList().OrderByDescending(b => b.Amount).FirstOrDefault();
-        var baseline = highestBid?.Amount ?? floor;
+        var baseline = highestBid?.Amount ?? BidIncrementRule.AlignUp(floor, auction.BidIncrementAmount);
         var incrementError = BidIncrementRule.Validate(amount, baseline, auction.BidIncrementAmount,
             requireIncrease: false, label: "Sale amount");
         if (incrementError != null)
@@ -68,14 +68,9 @@ public class SaleService
         if (auction.RosterMaxSize.HasValue && currentRosterSize >= auction.RosterMaxSize.Value)
             return new SaleResult { Success = false, Error = $"Team has reached its maximum roster size ({auction.RosterMaxSize.Value})" };
 
-        if (auction.Rules?.MinRemainingPurseRule.HasValue == true && auction.RosterMinSize.HasValue)
-        {
-            var slotsRemainingAfterThis = Math.Max(0, auction.RosterMinSize.Value - (currentRosterSize + 1));
-            var requiredReserve = slotsRemainingAfterThis * auction.Rules.MinRemainingPurseRule.Value;
-            var remainingAfterSale = availableBalance - amount;
-            if (remainingAfterSale < requiredReserve)
-                return new SaleResult { Success = false, Error = "Sale would leave insufficient purse for remaining required roster slots" };
-        }
+        var maximumBid = TeamBidCapacityRule.CalculateMaximumBid(auction, currentRosterSize, availableBalance);
+        if (amount > maximumBid)
+            return new SaleResult { Success = false, Error = $"Maximum sale amount for {team.Name} is {maximumBid:0.##}. Enough purse must remain to complete the minimum roster." };
 
         var beforePlayer = new { player.Status, player.TeamId, player.SalePrice };
 

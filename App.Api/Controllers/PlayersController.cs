@@ -31,11 +31,26 @@ public class PlayersController : ControllerBase
             await _db.AuctionUserAccess.AnyAsync(x => x.AuctionId == auctionId && x.UserId == CurrentUserId));
     }
 
+    private static string? ValidateIncrementAlignedPrice(Auction auction, decimal value, string label)
+    {
+        if (value <= 0) return $"{label} must be greater than zero.";
+        if (auction.BidIncrementAmount <= 0) return "Auction bid increment must be greater than zero.";
+        return value % auction.BidIncrementAmount == 0
+            ? null
+            : $"{label} must be a whole multiple of the auction bid increment ({auction.BidIncrementAmount:0.##}).";
+    }
+
     [HttpGet("api/auctions/{auctionId}/players")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetPlayers(int auctionId)
+    public async Task<IActionResult> GetPlayers(int auctionId, [FromQuery] bool includePhotos = true)
     {
-        var players = await _db.Players.Where(p => p.AuctionId == auctionId).ToListAsync();
+        var players = await _db.Players.AsNoTracking().Where(p => p.AuctionId == auctionId).ToListAsync();
+        if (!includePhotos)
+        {
+            // Live roster/pool views do not render player photos. Avoid repeatedly sending every
+            // base64 photo across the host's internet connection on each real-time auction update.
+            foreach (var player in players) player.PhotoUrl = null;
+        }
         return Ok(players);
     }
 
@@ -46,6 +61,13 @@ public class PlayersController : ControllerBase
         if (!await CanManageAuction(auctionId)) return Forbid();
         var auction = await _db.Auctions.FindAsync(auctionId);
         if (auction == null) return NotFound();
+        var basePriceError = ValidateIncrementAlignedPrice(auction, req.BasePrice, "Base price");
+        if (basePriceError != null) return BadRequest(new { error = basePriceError });
+        if (req.MinimumBidOverride.HasValue)
+        {
+            var overrideError = ValidateIncrementAlignedPrice(auction, req.MinimumBidOverride.Value, "Minimum bid override");
+            if (overrideError != null) return BadRequest(new { error = overrideError });
+        }
 
         var player = new Player
         {
@@ -83,6 +105,18 @@ public class PlayersController : ControllerBase
         var player = await _db.Players.FindAsync(id);
         if (player == null) return NotFound();
         if (!await CanManageAuction(player.AuctionId)) return Forbid();
+        var auction = await _db.Auctions.FindAsync(player.AuctionId);
+        if (auction == null) return NotFound();
+        if (req.BasePrice.HasValue)
+        {
+            var basePriceError = ValidateIncrementAlignedPrice(auction, req.BasePrice.Value, "Base price");
+            if (basePriceError != null) return BadRequest(new { error = basePriceError });
+        }
+        if (req.MinimumBidOverride.HasValue)
+        {
+            var overrideError = ValidateIncrementAlignedPrice(auction, req.MinimumBidOverride.Value, "Minimum bid override");
+            if (overrideError != null) return BadRequest(new { error = overrideError });
+        }
 
         var identityFieldsChanged = req.Name != null || req.Role != null || req.BasePrice.HasValue;
         if (identityFieldsChanged && player.Status == PlayerStatus.Sold)
@@ -138,14 +172,18 @@ public class PlayersController : ControllerBase
     {
         if (!await CanManageAuction(auctionId)) return Forbid();
         if (file == null || file.Length == 0) return BadRequest(new { error = "No file uploaded" });
+        var auction = await _db.Auctions.FindAsync(auctionId);
+        if (auction == null) return NotFound();
 
         var added = 0;
         var captainRows = new List<(Player Player, string Team, decimal Cost)>();
         using var reader = new StreamReader(file.OpenReadStream());
         string? line;
         var isHeader = true;
+        var rowNumber = 1;
         while ((line = await reader.ReadLineAsync()) != null)
         {
+            rowNumber++;
             if (isHeader) { isHeader = false; continue; }
             if (string.IsNullOrWhiteSpace(line)) continue;
             var parts = line.Split(',');
@@ -154,6 +192,8 @@ public class PlayersController : ControllerBase
             var name = parts[0].Trim();
             var role = parts[1].Trim();
             if (!decimal.TryParse(parts[2].Trim(), NumberStyles.Any, CultureInfo.InvariantCulture, out var basePrice)) continue;
+            var basePriceError = ValidateIncrementAlignedPrice(auction, basePrice, $"Base price on CSV row {rowNumber}");
+            if (basePriceError != null) return BadRequest(new { error = basePriceError });
 
             var player = new Player
             {

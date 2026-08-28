@@ -13,6 +13,13 @@ public class BidValidationResult
 
 public static class BidIncrementRule
 {
+    public static decimal AlignUp(decimal amount, decimal increment)
+    {
+        if (increment <= 0) return amount;
+        var remainder = amount % increment;
+        return remainder == 0 ? amount : amount + increment - remainder;
+    }
+
     public static string? Validate(decimal amount, decimal baseline, decimal increment, bool requireIncrease, string label)
     {
         if (increment <= 0)
@@ -28,6 +35,20 @@ public static class BidIncrementRule
             return $"{label} must be {baseline} plus a whole multiple of the bid increment ({increment})";
 
         return null;
+    }
+}
+
+public static class TeamBidCapacityRule
+{
+    public static decimal ReservePerRequiredSlot(Auction auction) =>
+        Math.Max(auction.MinimumBidAmount, auction.Rules?.MinRemainingPurseRule ?? 0);
+
+    public static decimal CalculateMaximumBid(Auction auction, int currentRosterSize, decimal availableBalance)
+    {
+        var requiredRosterSize = auction.RosterMinSize ?? 0;
+        var slotsRemainingAfterThisPurchase = Math.Max(0, requiredRosterSize - (currentRosterSize + 1));
+        var requiredReserve = slotsRemainingAfterThisPurchase * ReservePerRequiredSlot(auction);
+        return Math.Max(0, availableBalance - requiredReserve);
     }
 }
 
@@ -64,7 +85,7 @@ public class BidValidationService
         if (highestBid == null)
         {
             var floor = player.MinimumBidOverride ?? player.BasePrice;
-            var baseline = Math.Max(floor, auction.MinimumBidAmount);
+            var baseline = BidIncrementRule.AlignUp(Math.Max(floor, auction.MinimumBidAmount), auction.BidIncrementAmount);
             var incrementError = BidIncrementRule.Validate(amount, baseline, auction.BidIncrementAmount,
                 requireIncrease: false, label: "First bid");
             if (incrementError != null)
@@ -89,19 +110,15 @@ public class BidValidationService
         var rules = auction.Rules;
         var currentRosterSize = _db.Players.Count(p => p.TeamId == team.Id && (p.Status == PlayerStatus.Sold || p.IsCaptain));
 
+        var maximumBid = TeamBidCapacityRule.CalculateMaximumBid(auction, currentRosterSize, availableBalance);
+        if (amount > maximumBid)
+            return BidValidationResult.Fail($"Maximum bid for {team.Name} is {maximumBid:0.##}. Enough purse must remain to complete the minimum roster.");
+
         if (rules != null)
         {
             if (auction.RosterMaxSize.HasValue && currentRosterSize >= auction.RosterMaxSize.Value)
                 return BidValidationResult.Fail("Team has reached its maximum roster size");
 
-            if (rules.MinRemainingPurseRule.HasValue && auction.RosterMinSize.HasValue)
-            {
-                var slotsRemainingAfterThis = Math.Max(0, auction.RosterMinSize.Value - (currentRosterSize + 1));
-                var requiredReserve = slotsRemainingAfterThis * rules.MinRemainingPurseRule.Value;
-                var remainingAfterBid = availableBalance - amount;
-                if (remainingAfterBid < requiredReserve)
-                    return BidValidationResult.Fail("Bid would leave insufficient purse for remaining required roster slots");
-            }
         }
         else if (auction.RosterMaxSize.HasValue && currentRosterSize >= auction.RosterMaxSize.Value)
         {

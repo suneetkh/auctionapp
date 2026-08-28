@@ -76,13 +76,45 @@ public class LiveAuctionController : ControllerBase
         if (!await _db.Players.AnyAsync(p => p.AuctionId == auctionId && p.Status == eligibleStatus))
             return BadRequest(new { error = "No eligible players remain to select" });
 
-        const int selectionDurationMs = 2500;
-        await _broadcaster.BroadcastAsync(auctionId, "player_selecting", new { durationMs = selectionDurationMs });
-        await Task.Delay(selectionDurationMs);
+        // Keep the selected player private until the operator's wheel/meter has actually stopped.
+        // Persisting this flag also prevents a public-display refresh from revealing the result early.
+        auction.SelectionRevealPending = true;
+        await _db.SaveChangesAsync();
+        await _broadcaster.BroadcastAsync(auctionId, "player_selecting", new { });
 
-        var player = await _wheel.SpinAndSelectAsync(auction, CurrentUserId);
-        if (player == null) return BadRequest(new { error = "No eligible players remain to select" });
+        try
+        {
+            var player = await _wheel.SpinAndSelectAsync(auction, CurrentUserId);
+            if (player != null) return Ok(player);
 
+            auction.SelectionRevealPending = false;
+            await _db.SaveChangesAsync();
+            await _broadcaster.BroadcastAsync(auctionId, "player_selection_cancelled", new { });
+            return BadRequest(new { error = "No eligible players remain to select" });
+        }
+        catch
+        {
+            auction.SelectionRevealPending = false;
+            await _db.SaveChangesAsync();
+            await _broadcaster.BroadcastAsync(auctionId, "player_selection_cancelled", new { });
+            throw;
+        }
+    }
+
+    [HttpPost("finalize-selection")]
+    [Authorize(Roles = "SuperAdmin,AuctionAdmin")]
+    public async Task<IActionResult> FinalizeSelection(int auctionId)
+    {
+        if (!await CanOperate(auctionId)) return Forbid();
+        var auction = await LoadAuction(auctionId);
+        if (auction == null) return NotFound();
+
+        var player = await _db.Players.FirstOrDefaultAsync(p => p.AuctionId == auctionId &&
+            (p.Status == PlayerStatus.Selected || p.Status == PlayerStatus.Bidding));
+        if (player == null) return Conflict(new { error = "There is no selected player to reveal" });
+
+        auction.SelectionRevealPending = false;
+        await _db.SaveChangesAsync();
         await _broadcaster.BroadcastAsync(auctionId, "player_selected", new { player });
         return Ok(player);
     }
@@ -347,13 +379,16 @@ public class LiveAuctionController : ControllerBase
 
     [HttpGet("state")]
     [AllowAnonymous]
-    public async Task<IActionResult> GetState(int auctionId)
+    public async Task<IActionResult> GetState(int auctionId, [FromQuery] bool publicView = false)
     {
         var auction = await LoadAuction(auctionId);
         if (auction == null) return NotFound();
 
         var currentPlayer = await _db.Players.FirstOrDefaultAsync(p => p.AuctionId == auctionId &&
             (p.Status == PlayerStatus.Selected || p.Status == PlayerStatus.Bidding));
+
+        if (publicView && auction.SelectionRevealPending)
+            currentPlayer = null;
 
         var recentBids = currentPlayer != null
             ? await _db.Bids.Where(b => b.PlayerId == currentPlayer.Id).OrderByDescending(b => b.Id).Take(20).ToListAsync()

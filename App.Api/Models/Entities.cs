@@ -45,6 +45,7 @@ public class Auction
     public BiddingMode BiddingMode { get; set; } = BiddingMode.AdminControlled;
     public AuctionStatus Status { get; set; } = AuctionStatus.Draft;
     public int CurrentRound { get; set; } = 1;
+    public bool SelectionRevealPending { get; set; }
     public int OwnerUserId { get; set; }
     public DateTime CreatedAt { get; set; } = DateTime.UtcNow;
 
@@ -70,6 +71,7 @@ public class AuctionRules
     public string SoldAnimationStyle { get; set; } = "Stamp";
     public bool SoldSoundEnabled { get; set; } = true;
     public bool DrawSoundEnabled { get; set; } = true;
+    public string SelectionDisplayMode { get; set; } = "Meter";
     public bool PublicLivePanelEnabled { get; set; } = false;
     public string? CategoryLimitsJson { get; set; }
 

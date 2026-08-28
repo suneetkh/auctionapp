@@ -18,7 +18,7 @@ public record UpdateAuctionRequest(
     int? RosterMinSize, int? RosterMaxSize, AuctionVisibility? Visibility, BiddingMode? BiddingMode,
     bool? UnsoldRoundsEnabled, int? MaxUnsoldRounds, bool? AllowReducedBasePriceInUnsold,
     decimal? CustomUnsoldMinBid, bool? AllowWheelSelectionFromPool, decimal? MinRemainingPurseRule,
-    bool? SoldAnimationEnabled, string? SoldAnimationStyle, bool? SoldSoundEnabled, bool? DrawSoundEnabled, bool? PublicLivePanelEnabled);
+    bool? SoldAnimationEnabled, string? SoldAnimationStyle, bool? SoldSoundEnabled, bool? DrawSoundEnabled, string? SelectionDisplayMode, bool? PublicLivePanelEnabled);
 
 public record CreateTeamRequest(string Name, string? LogoUrl, string? TeamColor, int? OwnerUserId, string? ContactInfo, string? Notes, decimal? OpeningBalance);
 public record UpdateTeamRequest(string? Name, string? LogoUrl, string? TeamColor, int? OwnerUserId, string? ContactInfo, string? Notes, decimal? OpeningBalance, bool? IsActive);

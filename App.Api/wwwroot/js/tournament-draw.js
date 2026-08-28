@@ -422,6 +422,9 @@ const TournamentDraw = (() => {
         resizeCanvas();
         renderAll();
         if (assignments.length) showLatestResult(assignments[assignments.length - 1]);
+        window.dispatchEvent(new CustomEvent('tournament-draw-updated', {
+            detail: { auctionId: String(auctionId), assignments: assignments.map(item => ({ ...item })) }
+        }));
     }
 
     function setAuctionName(name) {

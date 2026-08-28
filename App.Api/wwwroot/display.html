@@ -67,6 +67,7 @@ let teamOrder = [];
 let publicSelectionInProgress = false;
 let publicSelectionTimer = null;
 let publicDrawSoundTimer = null;
+let sponsorsLoaded = false;
 
 // Rows must fit within a fixed-height box that never scrolls the page, so text size has to
 // scale against how many rows might actually appear - which is bounded by the auction's
@@ -84,7 +85,7 @@ function rosterSizing(maxRoster) {
 async function refreshTeams() {
   const [teams, players] = await Promise.all([
     Api.get(`/api/auctions/${auctionId}/teams`),
-    Api.get(`/api/auctions/${auctionId}/players`)
+    Api.get(`/api/auctions/${auctionId}/players?includePhotos=false`)
   ]);
   teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
   teamOrder = teams.map(t => t.id);
@@ -180,8 +181,8 @@ async function refreshTeams() {
   }
 }
 
-async function refreshState() {
-  const state = await Api.get(`/api/auctions/${auctionId}/state`);
+async function refreshStateCore() {
+  const state = await Api.get(`/api/auctions/${auctionId}/state?publicView=true`);
   currentAuction = state.auction;
   const showLivePanel = state.auction.rules?.publicLivePanelEnabled === true;
   document.getElementById('displayLiveEyebrow').classList.toggle('d-none', !showLivePanel);
@@ -201,9 +202,18 @@ async function refreshState() {
     statusBadgeClass(state.auction.status) + (state.auction.status === 'Live' ? ' is-live' : '');
   document.getElementById('statusBadge').textContent = humanizeStatus(state.auction.status);
   await refreshTeams();
-  if (!publicSelectionInProgress) renderLiveStrip(state);
-  await refreshSponsors();
+  if (state.auction.selectionRevealPending) {
+    if (!publicSelectionInProgress) showPublicSelection();
+  } else if (!publicSelectionInProgress) {
+    renderLiveStrip(state);
+  }
+  if (!sponsorsLoaded) {
+    await refreshSponsors();
+    sponsorsLoaded = true;
+  }
 }
+
+const refreshState = singleFlight(refreshStateCore);
 
 function celebrateSale(payload) {
   const teamId = payload?.sale?.teamId ?? payload?.player?.teamId;
@@ -265,11 +275,9 @@ function showPublicSelection(payload) {
   document.getElementById('displayLeaderAmount').innerHTML = '&mdash;';
   document.getElementById('displayLeaderTeam').textContent = 'Please wait';
   publicSelectionTimer = setTimeout(() => {
-    publicSelectionInProgress = false;
     if (publicDrawSoundTimer) clearInterval(publicDrawSoundTimer);
     publicDrawSoundTimer = null;
-    refreshState().catch(console.error);
-  }, Number(payload?.durationMs || 2500) + 1500);
+  }, 12000);
 }
 
 function revealPublicSelection() {
@@ -279,6 +287,15 @@ function revealPublicSelection() {
   publicDrawSoundTimer = null;
   SoldEffects.playDrawReveal();
   publicSelectionTimer = null;
+  refreshState().catch(console.error);
+}
+
+function cancelPublicSelection() {
+  publicSelectionInProgress = false;
+  if (publicSelectionTimer) clearTimeout(publicSelectionTimer);
+  if (publicDrawSoundTimer) clearInterval(publicDrawSoundTimer);
+  publicSelectionTimer = null;
+  publicDrawSoundTimer = null;
   refreshState().catch(console.error);
 }
 
@@ -297,9 +314,10 @@ refreshState().catch(console.error);
 
 createAuctionConnection(auctionId, {
   auction_status_changed: refreshState,
-  auction_settings_changed: refreshState,
+  auction_settings_changed: () => { sponsorsLoaded = false; return refreshState(); },
   player_selecting: showPublicSelection,
   player_selected: revealPublicSelection,
+  player_selection_cancelled: cancelPublicSelection,
   bid_placed: refreshState,
   bid_rejected: refreshState,
   bid_undone: refreshState,

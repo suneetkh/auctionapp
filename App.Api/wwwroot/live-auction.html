@@ -4,11 +4,22 @@
 <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
 <title>Live Auction Console</title>
 <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
-<link href="css/app.css?v=roster-type-1" rel="stylesheet">
+<link href="css/app.css?v=player-wheel-6" rel="stylesheet">
 </head>
 <body>
 <div id="app-navbar"></div>
 <div id="auctionToastStack" class="auction-toast-stack" aria-live="assertive" aria-atomic="false"></div>
+<div id="playerWheelOverlay" class="player-wheel-overlay d-none" aria-live="polite">
+  <div class="player-wheel-dialog">
+    <div class="player-wheel-kicker">SELECTING FROM AVAILABLE PLAYERS</div>
+    <div class="player-wheel-stage">
+      <canvas id="playerSelectionWheel" aria-label="Available player selection wheel"></canvas>
+      <div class="player-wheel-pointer" aria-hidden="true"></div>
+    </div>
+    <div id="playerWheelNeedleName" class="player-wheel-needle-name">Finding the next player…</div>
+    <div id="playerWheelCount" class="player-wheel-count"></div>
+  </div>
+</div>
 
 <div class="container-fluid px-4">
   <div class="d-flex justify-content-between align-items-center mb-3">
@@ -93,7 +104,7 @@
           <li class="nav-item"><a class="nav-link active" data-bs-toggle="tab" href="#tab-recentSold">Recently Sold</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-topSold">🏆 Top 5</a></li>
           <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-unsold">Unsold <span class="badge bg-secondary" id="unsoldCount">0</span></a></li>
-          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-reauction">🔁 In This Round <span class="badge bg-secondary" id="reauctionCount">0</span></a></li>
+          <li class="nav-item"><a class="nav-link" data-bs-toggle="tab" href="#tab-reauction">Available Players <span class="badge bg-secondary" id="reauctionCount">0</span></a></li>
         </ul>
         <div class="tab-content">
           <div class="tab-pane fade show active" id="tab-recentSold"><div id="recentSold" class="history-box"></div></div>
@@ -144,6 +155,7 @@ let bidInFlight = false;
 let postSaleBasePrice = null;
 let selectionPoolPlayers = [];
 let selectionMeterTimer = null;
+let selectionWheelAnimation = null;
 
 document.getElementById('bidAmount').addEventListener('input', () => {
   bidAmountUserEdited = true;
@@ -181,7 +193,8 @@ document.addEventListener('keydown', (event) => {
   const input = document.getElementById('bidAmount');
   const currentAmount = Number(input.value);
   const nextValidBid = Number(nextBidAmount());
-  const playerFloor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  const rawPlayerFloor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  const playerFloor = Math.ceil(rawPlayerFloor / Number(currentAuction.bidIncrementAmount)) * Number(currentAuction.bidIncrementAmount);
   // A sale may use the leader's exact amount; only a new bid must be leader + increment.
   // This lets Left Arrow step from the suggested next bid back to the current sale value.
   const lowerBound = leadingBid ? Number(leadingBid.amount) : playerFloor;
@@ -206,6 +219,9 @@ document.addEventListener('keydown', (event) => {
 function setSelectedTeam(teamId) {
   selectedTeamId = teamId && teamsById[teamId] ? Number(teamId) : null;
   document.getElementById('teamSelect').value = selectedTeamId || '';
+  const amountInput = document.getElementById('bidAmount');
+  if (selectedTeamId) amountInput.max = teamsById[selectedTeamId].maximumBid;
+  else amountInput.removeAttribute('max');
   document.querySelectorAll('.team-box').forEach(box => {
     box.classList.toggle('keyboard-selected', Number(box.dataset.teamId) === selectedTeamId);
   });
@@ -230,7 +246,7 @@ function updateKeyboardBidStatus() {
     return;
   }
   const amount = Number(document.getElementById('bidAmount').value);
-  status.textContent = `Selected: ${teamsById[selectedTeamId].name} · Bid: ${amount > 0 ? fmtMoney(amount) : '—'} · Press Enter to place`;
+  status.textContent = `Selected: ${teamsById[selectedTeamId].name} · Bid: ${amount > 0 ? fmtMoney(amount) : '—'} · Max: ${fmtMoney(teamsById[selectedTeamId].maximumBid)} · Press Enter to place`;
   status.classList.add('has-selection');
 }
 
@@ -349,6 +365,225 @@ function stopSelectionMeter() {
   playerCardEl.classList.remove('selecting-player');
 }
 
+const PLAYER_WHEEL_COLORS = ['#0891b2', '#0284c7', '#0f766e', '#16a34a', '#ca8a04', '#ea580c', '#dc2626', '#2563eb'];
+function cryptoVisualRandom() {
+  const value = new Uint32Array(1);
+  crypto.getRandomValues(value);
+  return value[0] / 0x100000000;
+}
+
+function startSelectionWheel() {
+  const overlay = document.getElementById('playerWheelOverlay');
+  const canvas = document.getElementById('playerSelectionWheel');
+  const context = canvas.getContext('2d');
+  const players = [...selectionPoolPlayers];
+  const names = players.map(player => player.name);
+  overlay.classList.remove('d-none');
+  const stage = canvas.parentElement;
+  const cssSize = Math.max(280, Math.floor(stage.getBoundingClientRect().width));
+  const dpr = Math.min(window.devicePixelRatio || 1, 2);
+  canvas.width = Math.floor(cssSize * dpr);
+  canvas.height = Math.floor(cssSize * dpr);
+  context.setTransform(dpr, 0, 0, dpr, 0, 0);
+  document.getElementById('playerWheelNeedleName').textContent = 'Finding the next player…';
+  document.getElementById('playerWheelCount').textContent = `${names.length} player${names.length === 1 ? '' : 's'} available in the auction`;
+
+  let rotation = 0;
+  let highlightedIndex = -1;
+  let frameId = null;
+  let lastFrame = performance.now();
+  let lastTickAt = 0;
+  const wheelLogo = new Image();
+  if (currentAuction?.logoDataUri) {
+    wheelLogo.onload = () => draw();
+    wheelLogo.src = currentAuction.logoDataUri;
+  }
+
+  const draw = () => {
+    context.clearRect(0, 0, cssSize, cssSize);
+    const center = cssSize / 2;
+    const radius = cssSize * .46;
+    if (!names.length) return;
+    const slice = Math.PI * 2 / names.length;
+    names.forEach((name, index) => {
+      const start = rotation + index * slice;
+      const end = start + slice;
+      const color = PLAYER_WHEEL_COLORS[index % PLAYER_WHEEL_COLORS.length];
+      context.beginPath();
+      context.moveTo(center, center);
+      context.arc(center, center, radius, start, end);
+      context.closePath();
+      context.fillStyle = color;
+      context.fill();
+      context.lineWidth = Math.max(1, cssSize * .003);
+      context.strokeStyle = 'rgba(255,255,255,.78)';
+      context.stroke();
+      if (index === highlightedIndex) {
+        context.lineWidth = Math.max(4, cssSize * .009);
+        context.strokeStyle = '#facc15';
+        context.stroke();
+      }
+
+      // Wheel-of-Names-style radial labels use the long dimension of each slice instead of
+      // squeezing every name into a small horizontal box at its centre.
+      const middle = start + slice / 2;
+      const maxWidth = radius * .68;
+      const segmentHeight = radius * slice;
+      let fontSize = Math.max(9, Math.min(18, segmentHeight * .42));
+      context.save();
+      context.translate(center, center);
+      context.rotate(middle);
+      // Base this on the segment itself, not its changing screen position. Otherwise a name
+      // abruptly flips orientation whenever its rotating segment crosses the left/right axis.
+      const fixedLabelAngle = index * slice + slice / 2;
+      const isLeftSide = Math.cos(fixedLabelAngle) < 0;
+      if (isLeftSide) context.rotate(Math.PI);
+      while (fontSize > 9) {
+        context.font = `850 ${fontSize}px system-ui, sans-serif`;
+        if (context.measureText(name).width <= maxWidth) break;
+        fontSize--;
+      }
+      context.font = `850 ${fontSize}px system-ui, sans-serif`;
+      let visibleName = name;
+      while (visibleName.length > 5 && context.measureText(visibleName).width > maxWidth) {
+        visibleName = `${visibleName.slice(0, -2).replace(/…$/, '')}…`;
+      }
+      context.fillStyle = '#fff';
+      context.textAlign = isLeftSide ? 'left' : 'right';
+      context.textBaseline = 'middle';
+      context.shadowColor = 'rgba(0,0,0,.7)';
+      context.shadowBlur = 3;
+      context.shadowOffsetY = 1;
+      context.fillText(visibleName, isLeftSide ? -radius * .89 : radius * .89, 0, maxWidth);
+      context.restore();
+    });
+    context.beginPath();
+    context.arc(center, center, radius, 0, Math.PI * 2);
+    context.lineWidth = Math.max(6, cssSize * .012);
+    context.strokeStyle = '#0f172a';
+    context.stroke();
+    const hubRadius = radius * .19;
+    context.beginPath();
+    context.arc(center, center, hubRadius, 0, Math.PI * 2);
+    context.fillStyle = '#fff';
+    context.fill();
+    context.lineWidth = 4;
+    context.strokeStyle = '#0891b2';
+    context.stroke();
+    if (wheelLogo.complete && wheelLogo.naturalWidth > 0) {
+      const maxLogoSize = hubRadius * 1.48;
+      const scale = Math.min(maxLogoSize / wheelLogo.naturalWidth, maxLogoSize / wheelLogo.naturalHeight);
+      const logoWidth = wheelLogo.naturalWidth * scale;
+      const logoHeight = wheelLogo.naturalHeight * scale;
+      context.save();
+      context.beginPath();
+      context.arc(center, center, hubRadius * .82, 0, Math.PI * 2);
+      context.clip();
+      context.drawImage(wheelLogo, center - logoWidth / 2, center - logoHeight / 2, logoWidth, logoHeight);
+      context.restore();
+    }
+  };
+
+  const idleFrame = now => {
+    rotation += (now - lastFrame) * .00085;
+    const slice = names.length ? Math.PI * 2 / names.length : Math.PI * 2;
+    const currentSlice = Math.floor(rotation / slice);
+    if (currentSlice !== selectionWheelAnimation?.idleSlice && now - lastTickAt > 90) {
+      SoldEffects.playDrawTick(currentSlice);
+      if (selectionWheelAnimation) selectionWheelAnimation.idleSlice = currentSlice;
+      lastTickAt = now;
+    }
+    lastFrame = now;
+    draw();
+    frameId = requestAnimationFrame(idleFrame);
+  };
+  draw();
+  frameId = requestAnimationFrame(idleFrame);
+
+  selectionWheelAnimation = {
+    async finish(selectedPlayer) {
+      if (frameId) cancelAnimationFrame(frameId);
+      const selectedIndex = players.findIndex(player => player.id === selectedPlayer.id);
+      if (selectedIndex < 0 || !players.length) return;
+      const slice = Math.PI * 2 / players.length;
+      const desired = -Math.PI / 2 - (selectedIndex + .5) * slice;
+      const normalizedDelta = ((desired - rotation) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+      const startRotation = rotation;
+      const turns = 6 + Math.floor(cryptoVisualRandom() * 4);
+      const duration = window.matchMedia('(prefers-reduced-motion: reduce)').matches ? 250 : 9000 + Math.floor(cryptoVisualRandom() * 1800);
+      const endRotation = rotation + Math.PI * 2 * turns + normalizedDelta;
+      // Three physical-feeling phases: accelerate, cruise at speed, then take a long coast
+      // to the needle. Tune the coast so about two candidates remain near the very end.
+      const travelInSlices = Math.max(1, ((endRotation - startRotation) / (Math.PI * 2)) * players.length);
+      const accelerationEnd = .11;
+      const cruiseEnd = .30;
+      const accelerationTravel = .095;
+      const cruiseTravel = .33;
+      const coastTravel = 1 - accelerationTravel - cruiseTravel;
+      const finalCoastRemaining = (1 - .92) / (1 - cruiseEnd);
+      const decelerationPower = Math.max(1.45, Math.min(2.25,
+        Math.log(1.65 / (coastTravel * travelInSlices)) / Math.log(finalCoastRemaining)));
+      const started = performance.now();
+      let previousSlice = Math.floor(rotation / slice);
+      let lastNeedleUpdate = 0;
+      await new Promise(resolve => {
+        const finishFrame = now => {
+          const progress = Math.min(1, (now - started) / duration);
+          let eased;
+          if (progress < accelerationEnd) {
+            const phase = progress / accelerationEnd;
+            eased = accelerationTravel * phase * phase;
+          } else if (progress < cruiseEnd) {
+            const phase = (progress - accelerationEnd) / (cruiseEnd - accelerationEnd);
+            eased = accelerationTravel + cruiseTravel * phase;
+          } else {
+            const phase = (progress - cruiseEnd) / (1 - cruiseEnd);
+            eased = accelerationTravel + cruiseTravel + coastTravel * (1 - Math.pow(1 - phase, decelerationPower));
+          }
+          rotation = startRotation + (endRotation - startRotation) * eased;
+          const currentSlice = Math.floor(rotation / slice);
+          if (currentSlice !== previousSlice && now - lastTickAt > 65) {
+            SoldEffects.playDrawTick(currentSlice);
+            const pointer = document.querySelector('.player-wheel-pointer');
+            pointer?.classList.remove('is-ticking');
+            if (pointer) void pointer.offsetWidth;
+            pointer?.classList.add('is-ticking');
+            previousSlice = currentSlice;
+            lastTickAt = now;
+          }
+          if (now - lastNeedleUpdate > 80) {
+            const needleAngle = ((-Math.PI / 2 - rotation) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2);
+            const needleIndex = Math.min(players.length - 1, Math.floor(needleAngle / slice));
+            document.getElementById('playerWheelNeedleName').textContent = players[needleIndex]?.name || 'Selecting…';
+            lastNeedleUpdate = now;
+          }
+          draw();
+          if (progress < 1) frameId = requestAnimationFrame(finishFrame);
+          else resolve();
+        };
+        frameId = requestAnimationFrame(finishFrame);
+      });
+      highlightedIndex = selectedIndex;
+      draw();
+      document.getElementById('playerWheelNeedleName').textContent = selectedPlayer.name;
+      document.getElementById('playerWheelCount').textContent = 'Player selected — bidding is ready';
+      SoldEffects.celebrateDraw(selectedPlayer.name, PLAYER_WHEEL_COLORS[selectedIndex % PLAYER_WHEEL_COLORS.length]);
+      await new Promise(resolve => setTimeout(resolve, 2400));
+    },
+    stop() {
+      if (frameId) cancelAnimationFrame(frameId);
+      overlay.classList.add('d-none');
+    }
+  };
+  return selectionWheelAnimation;
+}
+
+function stopSelectionAnimation() {
+  stopSelectionMeter();
+  selectionWheelAnimation?.stop();
+  selectionWheelAnimation = null;
+}
+
 function resetBidControlsAfterSale(player) {
   postSaleBasePrice = Number(player?.basePrice) || null;
   setSelectedTeam(null);
@@ -367,7 +602,8 @@ function computeLeadingBid(bids) {
 function nextBidAmount() {
   if (!currentPlayer || !currentAuction) return '';
   const increment = currentAuction.bidIncrementAmount;
-  const floor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  const rawFloor = Math.max(currentPlayer.basePrice, currentAuction.minimumBidAmount, currentPlayer.minimumBidOverride || 0);
+  const floor = Math.ceil(rawFloor / Number(increment)) * Number(increment);
   return leadingBid ? leadingBid.amount + increment : floor;
 }
 
@@ -390,7 +626,7 @@ function refreshLeaderUi() {
 async function refreshTeams() {
   const [teams, players] = await Promise.all([
     Api.get(`/api/auctions/${auctionId}/teams`),
-    Api.get(`/api/auctions/${auctionId}/players`)
+    Api.get(`/api/auctions/${auctionId}/players?includePhotos=false`)
   ]);
   teamsById = Object.fromEntries(teams.map(t => [t.id, t]));
   teamOrder = teams.map(t => t.id);
@@ -448,6 +684,11 @@ async function refreshTeams() {
   document.getElementById('teamBoxes').innerHTML = teams.map((t, idx) => {
     const roster = rosterByTeam[t.id] || [];
     const color = t.teamColor || teamColor(idx);
+    const reservePerSlot = Math.max(Number(currentAuction?.minimumBidAmount || 0), Number(currentAuction?.rules?.minRemainingPurseRule || 0));
+    const requiredSlotsAfterPurchase = Math.max(0, Number(currentAuction?.rosterMinSize || 0) - (roster.length + 1));
+    const calculatedMaximumBid = Math.max(0, Number(t.availableBalance) - requiredSlotsAfterPurchase * reservePerSlot);
+    const maximumBid = Number.isFinite(Number(t.maximumBid)) ? Number(t.maximumBid) : calculatedMaximumBid;
+    t.maximumBid = maximumBid;
     const initials = t.name.split(/\s+/).map(w => w[0]).slice(0, 2).join('').toUpperCase();
     const spentPct = t.openingBalance > 0 ? Math.min(100, Math.round((1 - t.availableBalance / t.openingBalance) * 100)) : 0;
     const low = t.availableBalance < t.openingBalance * 0.1;
@@ -469,12 +710,9 @@ async function refreshTeams() {
             </div>
             ${low ? '<span class="badge text-bg-danger">LOW</span>' : ''}
           </div>
-          <div class="d-flex justify-content-between align-items-baseline mb-1">
-            <span class="team-balance-amount ${low ? 'balance-low' : 'balance-positive'}">${fmtMoney(t.availableBalance)}</span>
-            <span class="small text-muted">of ${fmtMoney(t.openingBalance)}</span>
-          </div>
-          <div class="progress team-spend-bar mb-2" style="height:6px;">
-            <div class="progress-bar" style="width:${spentPct}%; background:${color}"></div>
+          <div class="team-bid-capacity mb-2">
+            <div><span>Available purse</span><strong style="color:${color}">${fmtMoney(t.availableBalance)}</strong></div>
+            <div><span>Maximum bid</span><strong>${fmtMoney(maximumBid)}</strong></div>
           </div>
           <div class="team-roster-scroll ${teams.length <= 3 ? 'no-roster-scroll' : ''}">${rosterRows}</div>
         </div>
@@ -576,7 +814,7 @@ function clearAuctionNotices() {
   clearUiNotices();
 }
 
-async function refreshState() {
+async function refreshStateCore() {
   const state = await Api.get(`/api/auctions/${auctionId}/state`);
   currentAuction = state.auction;
   document.getElementById('bidAmount').step = state.auction.bidIncrementAmount;
@@ -602,6 +840,12 @@ async function refreshState() {
   }
   renderPlayerCard(state.currentPlayer);
   renderBidHistory(state.recentBids);
+  if (state.auction.status === 'Draft') {
+    postSaleBasePrice = null;
+    bidAmountUserEdited = false;
+    setSelectedTeam(null);
+    document.getElementById('bidAmount').value = state.auction.minimumBidAmount;
+  }
   if (state.currentPlayer) {
     postSaleBasePrice = null;
   } else if (postSaleBasePrice != null) {
@@ -610,6 +854,8 @@ async function refreshState() {
   }
   renderRecentSold(state.recentSales);
 }
+
+const refreshState = singleFlight(refreshStateCore);
 
 function celebrateSale(payload) {
   resetBidControlsAfterSale(payload?.player);
@@ -645,15 +891,35 @@ async function spin() {
   spinLabel.textContent = 'Selecting...';
   spinHint.textContent = 'Drawing from the player pool';
   playerCardEl.classList.remove('player-reveal');
-  startSelectionMeter();
+  if (currentAuction?.rules?.drawSoundEnabled !== false) {
+    try { await SoldEffects.unlockAudio(); } catch { /* Browser may still require its sound control. */ }
+  }
+  const useWheel = currentAuction?.rules?.selectionDisplayMode === 'Wheel';
+  const wheel = useWheel ? startSelectionWheel() : null;
+  if (!useWheel) startSelectionMeter();
   try {
     const selectionStartedAt = performance.now();
     const player = await Api.post(`/api/auctions/${auctionId}/spin`);
-    const remainingAnimationTime = Math.max(0, 2500 - (performance.now() - selectionStartedAt));
-    if (remainingAnimationTime) await new Promise(resolve => setTimeout(resolve, remainingAnimationTime));
-    stopSelectionMeter();
+    if (wheel) await wheel.finish(player);
+    else {
+      const remainingAnimationTime = Math.max(0, 2500 - (performance.now() - selectionStartedAt));
+      if (remainingAnimationTime) await new Promise(resolve => setTimeout(resolve, remainingAnimationTime));
+    }
+    let finalizeError;
+    for (let attempt = 0; attempt < 3; attempt++) {
+      try {
+        await Api.post(`/api/auctions/${auctionId}/finalize-selection`);
+        finalizeError = null;
+        break;
+      } catch (err) {
+        finalizeError = err;
+        if (attempt < 2) await new Promise(resolve => setTimeout(resolve, 350 * (attempt + 1)));
+      }
+    }
+    if (finalizeError) throw finalizeError;
+    stopSelectionAnimation();
     renderPlayerCard(player);
-    SoldEffects.playDrawReveal();
+    if (!wheel) SoldEffects.playDrawReveal();
     void playerCardEl.offsetWidth;
     playerCardEl.classList.add('player-reveal');
     setTimeout(() => playerCardEl.classList.remove('player-reveal'), 460);
@@ -663,7 +929,7 @@ async function spin() {
     showAuctionNotice(err.message);
   } finally {
     isSpinning = false;
-    stopSelectionMeter();
+    stopSelectionAnimation();
     spinButton.classList.remove('is-spinning');
     spinButton.disabled = false;
     spinLabel.textContent = 'Spin & Select';
