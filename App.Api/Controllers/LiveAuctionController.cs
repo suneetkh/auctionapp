@@ -362,7 +362,15 @@ public class LiveAuctionController : ControllerBase
             case "reassign_player":
                 if (!req.PlayerId.HasValue || !req.NewTeamId.HasValue || !req.NewAmount.HasValue)
                     return BadRequest(new { error = "PlayerId, NewTeamId, NewAmount required" });
+                if (!await _db.Players.AnyAsync(p => p.Id == req.PlayerId.Value && p.AuctionId == auctionId))
+                    return BadRequest(new { error = "Player does not belong to this auction" });
                 result = await _correction.ReassignPlayerAsync(req.PlayerId.Value, req.NewTeamId.Value, req.NewAmount.Value, req.Reason, CurrentUserId);
+                break;
+            case "unassign_player":
+                if (!req.PlayerId.HasValue) return BadRequest(new { error = "PlayerId required" });
+                if (!await _db.Players.AnyAsync(p => p.Id == req.PlayerId.Value && p.AuctionId == auctionId))
+                    return BadRequest(new { error = "Player does not belong to this auction" });
+                result = await _correction.UnassignPlayerAsync(req.PlayerId.Value, req.Reason, CurrentUserId);
                 break;
             case "adjust_min_purse_rule":
                 result = await _correction.AdjustMinRemainingPurseRuleAsync(auctionId, req.NewMinRemainingPurseRule, req.Reason, CurrentUserId);

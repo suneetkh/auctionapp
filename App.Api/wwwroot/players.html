@@ -55,6 +55,46 @@
   </table></div>
 </div>
 
+<div class="modal fade" id="playerAssignmentModal" tabindex="-1" aria-labelledby="playerAssignmentTitle" aria-hidden="true">
+  <div class="modal-dialog modal-dialog-centered">
+    <div class="modal-content">
+      <form id="playerAssignmentForm">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title" id="playerAssignmentTitle">Manage Team Assignment</h5>
+            <div class="small text-muted" id="playerAssignmentCurrent"></div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <input type="hidden" id="assignmentPlayerId">
+          <div class="alert alert-info py-2 small">This is an administrator correction and works in every auction state. The roster and team purse will update together.</div>
+          <div class="mb-3">
+            <label class="form-label">Assign to team</label>
+            <select class="form-select" id="assignmentTeam" required></select>
+          </div>
+          <div class="mb-3">
+            <label class="form-label">Assignment / bidding price</label>
+            <input class="form-control" id="assignmentPrice" type="number" min="0" required>
+            <div class="form-text" id="assignmentPriceHelp"></div>
+          </div>
+          <div>
+            <label class="form-label">Reason</label>
+            <input class="form-control" id="assignmentReason" value="Manual player assignment correction" maxlength="250" required>
+          </div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <button class="btn btn-outline-danger d-none" id="unassignPlayerBtn" type="button" onclick="unassignPlayer()">Unassign from Team</button>
+          <div class="d-flex gap-2 ms-auto">
+            <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+            <button type="submit" class="btn btn-primary">Save Assignment</button>
+          </div>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
 <div class="modal fade" id="editPlayerModal" tabindex="-1">
   <div class="modal-dialog">
     <div class="modal-content">
@@ -157,11 +197,71 @@ async function load() {
       <td>${p.isCaptain ? ((p.captainCost > 0) ? fmtMoney(p.captainCost) : '') : (p.salePrice ? fmtMoney(p.salePrice) : '-')}</td>
       <td>
         <button class="btn btn-sm btn-outline-primary" onclick="openEditPlayer(${p.id})">Edit</button>
+        ${p.isCaptain ? '' : `<button class="btn btn-sm btn-outline-secondary" onclick="openPlayerAssignment(${p.id})">${p.teamId ? 'Assignment' : 'Assign'}</button>`}
         ${p.status === 'Sold' || p.isCaptain ? '' : `<button class="btn btn-sm btn-outline-danger" onclick="removePlayer(${p.id})">Delete</button>`}
       </td>
     </tr>`).join('') || '<tr><td colspan="9" class="text-center text-muted">No players yet</td></tr>';
 }
 load().catch(err => alert(err.message));
+
+function openPlayerAssignment(id) {
+  const player = playersById[id];
+  if (!player || player.isCaptain) return;
+  document.getElementById('assignmentPlayerId').value = player.id;
+  document.getElementById('playerAssignmentTitle').textContent = `Manage Assignment — ${player.name}`;
+  document.getElementById('playerAssignmentCurrent').textContent = player.teamId
+    ? `Currently assigned to ${teamsById[player.teamId] || 'Team ' + player.teamId} for ${fmtMoney(player.salePrice)}`
+    : 'Currently not assigned to a team';
+  document.getElementById('assignmentTeam').innerHTML = '<option value="">Choose team...</option>' +
+    teams.filter(team => team.isActive).map(team => `<option value="${team.id}">${team.name} · Purse ${fmtMoney(team.availableBalance)}</option>`).join('');
+  document.getElementById('assignmentTeam').value = player.teamId || '';
+  const floor = Math.max(Number(player.minimumBidOverride || player.basePrice), Number(currentAuction.minimumBidAmount));
+  const alignedFloor = Math.ceil(floor / Number(currentAuction.bidIncrementAmount)) * Number(currentAuction.bidIncrementAmount);
+  document.getElementById('assignmentPrice').step = currentAuction.bidIncrementAmount;
+  document.getElementById('assignmentPrice').min = alignedFloor;
+  document.getElementById('assignmentPrice').value = player.salePrice || alignedFloor;
+  document.getElementById('assignmentPriceHelp').textContent =
+    `Minimum ${fmtMoney(alignedFloor)} · increment ${fmtMoney(currentAuction.bidIncrementAmount)}`;
+  document.getElementById('assignmentReason').value = 'Manual player assignment correction';
+  document.getElementById('unassignPlayerBtn').classList.toggle('d-none', !player.teamId);
+  bootstrap.Modal.getOrCreateInstance(document.getElementById('playerAssignmentModal')).show();
+}
+
+document.getElementById('playerAssignmentForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  const playerId = Number(document.getElementById('assignmentPlayerId').value);
+  const newTeamId = Number(document.getElementById('assignmentTeam').value);
+  const newAmount = Number(document.getElementById('assignmentPrice').value);
+  const reason = document.getElementById('assignmentReason').value.trim();
+  if (!newTeamId) return showUiNotice('Choose a team for this player.', 'warning');
+  if (!(newAmount > 0)) return showUiNotice('Enter a valid assignment price.', 'warning');
+  if (!reason) return showUiNotice('Enter a reason for this correction.', 'warning');
+  try {
+    await Api.post(`/api/auctions/${auctionId}/correction`, {
+      type: 'reassign_player', playerId, newTeamId, newAmount, reason
+    });
+    bootstrap.Modal.getInstance(document.getElementById('playerAssignmentModal'))?.hide();
+    await load();
+    showUiNotice('Player assignment and team purse updated.', 'success');
+  } catch (err) { showUiNotice(err.message, 'error'); }
+});
+
+async function unassignPlayer() {
+  const playerId = Number(document.getElementById('assignmentPlayerId').value);
+  const player = playersById[playerId];
+  const reason = document.getElementById('assignmentReason').value.trim();
+  if (!reason) return showUiNotice('Enter a reason for this correction.', 'warning');
+  if (!await uiConfirm(`Unassign ${player?.name || 'this player'} and refund the recorded price to the team purse?`,
+    { danger: true, title: 'Unassign player?', okText: 'Unassign' })) return;
+  try {
+    await Api.post(`/api/auctions/${auctionId}/correction`, {
+      type: 'unassign_player', playerId, reason
+    });
+    bootstrap.Modal.getInstance(document.getElementById('playerAssignmentModal'))?.hide();
+    await load();
+    showUiNotice('Player unassigned and team purse refunded.', 'success');
+  } catch (err) { showUiNotice(err.message, 'error'); }
+}
 
 document.getElementById('addForm').addEventListener('submit', async (e) => {
   e.preventDefault();
